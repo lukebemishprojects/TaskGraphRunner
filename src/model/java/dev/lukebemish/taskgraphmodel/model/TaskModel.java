@@ -6,14 +6,14 @@ import com.google.gson.JsonObject;
 import java.util.List;
 import java.util.function.Function;
 
-public sealed interface Task {
+public sealed interface TaskModel {
     String type();
 
     String name();
 
-    static Task fromJson(JsonElement json) {
+    static TaskModel fromJson(JsonElement json) {
         var type = json.getAsJsonObject().get("type").getAsString();
-        Function<JsonObject, Task> deserializer = switch (type) {
+        Function<JsonObject, TaskModel> deserializer = switch (type) {
             case "downloadManifest" -> DownloadManifest::fromJson;
             case "downloadJson" -> DownloadJson::fromJson;
             case "downloadDistribution" -> DownloadDistribution::fromJson;
@@ -34,7 +34,7 @@ public sealed interface Task {
         return List.of(new Output(name(), "output"));
     }
 
-    record DownloadManifest(String name) implements Task {
+    record DownloadManifest(String name) implements TaskModel {
         @Override
         public String type() {
             return "downloadManifest";
@@ -54,7 +54,7 @@ public sealed interface Task {
         }
     }
 
-    record DownloadJson(String name, String version, Input manifest) implements Task {
+    record DownloadJson(String name, String version, Input manifest) implements TaskModel {
 
         @Override
         public String type() {
@@ -79,7 +79,7 @@ public sealed interface Task {
         }
     }
 
-    record DownloadDistribution(String name, Distribution distribution, Input versionJson) implements Task {
+    record DownloadDistribution(String name, Distribution distribution, Input versionJson) implements TaskModel {
         @Override
         public String type() {
             return "downloadDistribution";
@@ -103,7 +103,7 @@ public sealed interface Task {
         }
     }
 
-    record DownloadMappings(String name, Distribution distribution, Input versionJson) implements Task {
+    record DownloadMappings(String name, Distribution distribution, Input versionJson) implements TaskModel {
         @Override
         public String type() {
             return "downloadMappings";
@@ -127,7 +127,7 @@ public sealed interface Task {
         }
     }
 
-    record SplitClassesResources(String name, Input input) implements Task {
+    record SplitClassesResources(String name, Input input) implements TaskModel {
         @Override
         public String type() {
             return "splitClassesResources";
@@ -154,7 +154,7 @@ public sealed interface Task {
         }
     }
 
-    record ListClasspath(String name, Input versionJson) implements Task {
+    record ListClasspath(String name, Input versionJson) implements TaskModel {
         @Override
         public String type() {
             return "listClasspath";
@@ -176,7 +176,7 @@ public sealed interface Task {
         }
     }
 
-    record InjectSources(String name, Input input, Input sources) implements Task {
+    record InjectSources(String name, Input input, Input sources) implements TaskModel {
         @Override
         public String type() {
             return "injectSources";
@@ -200,7 +200,7 @@ public sealed interface Task {
         }
     }
 
-    record PatchSources(String name, Input input, Input patches) implements Task {
+    record PatchSources(String name, Input input, Input patches) implements TaskModel {
         @Override
         public String type() {
             return "patchSources";
@@ -224,7 +224,7 @@ public sealed interface Task {
         }
     }
 
-    record RetrieveData(String name, Input input, String path) implements Task {
+    record RetrieveData(String name, Input input, String path) implements TaskModel {
         @Override
         public String type() {
             return "retrieveData";

@@ -4,11 +4,9 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 
-public record Config(List<Task> tasks, List<WorkItem> workItems) {
+public record Config(List<TaskModel> tasks, List<WorkItem> workItems) {
     JsonElement toJson() {
         JsonObject json = new JsonObject();
         var workItemsArray = new JsonArray();
@@ -16,7 +14,7 @@ public record Config(List<Task> tasks, List<WorkItem> workItems) {
             workItemsArray.add(workItem.toJson());
         }
         JsonArray tasksArray = new JsonArray();
-        for (Task task : tasks) {
+        for (TaskModel task : tasks) {
             tasksArray.add(task.toJson());
         }
         json.add("workItems", workItemsArray);
@@ -30,7 +28,7 @@ public record Config(List<Task> tasks, List<WorkItem> workItems) {
             var workItemsArray = jsonObject.getAsJsonArray("workItems");
             var workItems = workItemsArray.asList().stream().map(WorkItem::fromJson).toList();
             var tasksArray = jsonObject.getAsJsonArray("tasks");
-            var tasks = tasksArray.asList().stream().map(Task::fromJson).toList();
+            var tasks = tasksArray.asList().stream().map(TaskModel::fromJson).toList();
             return new Config(tasks, workItems);
         } else {
             throw new IllegalArgumentException("Not an object `" + json + "`");

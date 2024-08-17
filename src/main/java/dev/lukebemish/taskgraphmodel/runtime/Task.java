@@ -1,11 +1,13 @@
 package dev.lukebemish.taskgraphmodel.runtime;
 
 import com.google.gson.Gson;
+import com.google.gson.GsonBuilder;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 
 import java.io.ByteArrayOutputStream;
+import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.security.DigestInputStream;
@@ -15,7 +17,7 @@ import java.util.List;
 import java.util.Map;
 
 public abstract class Task implements RecordedInput {
-    private static final Gson GSON = new Gson();
+    private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
 
     private final String name;
 
@@ -36,6 +38,7 @@ public abstract class Task implements RecordedInput {
     private boolean executed;
 
     synchronized void execute(Context context) {
+        // TODO: locking
         if (executed) {
             return;
         }
@@ -70,7 +73,7 @@ public abstract class Task implements RecordedInput {
                     }
                 }
                 if (allOutputsMatch) {
-                    JsonElement newInputState = inputState(context);
+                    JsonElement newInputState = recordedValue(context);
                     if (newInputState.equals(existingInputState)) {
                         executed = true;
                         return;
@@ -89,7 +92,40 @@ public abstract class Task implements RecordedInput {
         }
         // Something was not up-to-date -- so we run everything
         run(context);
+        saveState(context);
         executed = true;
+    }
+
+    private void saveState(Context context) {
+        var statePath = context.taskStatePath(name());
+        var inputState = recordedValue(context);
+        JsonObject outputHashes = new JsonObject();
+        for (var output : outputTypes().keySet()) {
+            var outputPath = context.taskOutputPath(name(), output);
+            if (Files.exists(outputPath)) {
+                try {
+                    MessageDigest digest = MessageDigest.getInstance("MD5");
+                    try (var stream = Files.newInputStream(outputPath);
+                         var dis = new DigestInputStream(stream, digest)) {
+                        dis.readAllBytes();
+                    }
+                    var hash = String.format("%032x", new java.math.BigInteger(1, digest.digest()));
+                    outputHashes.addProperty(output, hash);
+                } catch (NoSuchAlgorithmException | IOException e) {
+                    throw new RuntimeException(e);
+                }
+            } else {
+                throw new RuntimeException("Output file for `"+output+"`not found after task `"+name+"` completed");
+            }
+        }
+        JsonObject state = new JsonObject();
+        state.add("inputs", inputState);
+        state.add("hashes", outputHashes);
+        try (var writer = Files.newBufferedWriter(statePath, StandardCharsets.UTF_8)) {
+            GSON.toJson(state, writer);
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
     }
 
     @Override
@@ -122,7 +158,8 @@ public abstract class Task implements RecordedInput {
         }
     }
 
-    public JsonElement inputState(Context context) {
+    @Override
+    public JsonElement recordedValue(Context context) {
         JsonObject state = new JsonObject();
         state.addProperty("name", name());
         state.addProperty("type", getClass().getName());
@@ -145,5 +182,5 @@ public abstract class Task implements RecordedInput {
         return state;
     }
 
-    abstract void run(Context context);
+    protected abstract void run(Context context);
 }
