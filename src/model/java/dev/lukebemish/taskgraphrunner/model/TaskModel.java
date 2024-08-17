@@ -1,8 +1,11 @@
 package dev.lukebemish.taskgraphrunner.model;
 
+import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
+import org.jspecify.annotations.Nullable;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.function.Function;
 
@@ -23,6 +26,7 @@ public sealed interface TaskModel {
             case "injectSources" -> InjectSources::fromJson;
             case "patchSources" -> PatchSources::fromJson;
             case "retrieveData" -> RetrieveData::fromJson;
+            case "tool" -> Tool::fromJson;
             default -> throw new IllegalArgumentException("Unknown task type `" + type + "`");
         };
         return deserializer.apply(json.getAsJsonObject());
@@ -32,6 +36,35 @@ public sealed interface TaskModel {
 
     default List<Output> outputs() {
         return List.of(new Output(name(), "output"));
+    }
+
+    record Tool(String name, List<Argument> args) implements TaskModel {
+
+        @Override
+        public String type() {
+            return "tool";
+        }
+
+        @Override
+        public JsonElement toJson() {
+            var json = new JsonObject();
+            json.addProperty("type", type());
+            json.addProperty("name", name);
+            var args = new JsonArray();
+            for (var arg : this.args) {
+                args.add(arg.toJson());
+            }
+            json.add("args", args);
+            return json;
+        }
+        static Tool fromJson(JsonObject json) {
+            var name = json.get("name").getAsString();
+            var args = new ArrayList<Argument>();
+            for (var arg : json.getAsJsonArray("args")) {
+                args.add(Argument.fromJson(arg));
+            }
+            return new Tool(name, args);
+        }
     }
 
     record DownloadManifest(String name) implements TaskModel {
@@ -127,7 +160,7 @@ public sealed interface TaskModel {
         }
     }
 
-    record SplitClassesResources(String name, Input input) implements TaskModel {
+    record SplitClassesResources(String name, Input input, @Nullable Input excludePattern) implements TaskModel {
         @Override
         public String type() {
             return "splitClassesResources";
@@ -139,13 +172,18 @@ public sealed interface TaskModel {
             json.addProperty("type", type());
             json.addProperty("name", name);
             json.add("input", input.toJson());
+            if (excludePattern != null) {
+                json.add("excludePatterns", excludePattern.toJson());
+            }
             return json;
         }
 
         static SplitClassesResources fromJson(JsonObject json) {
             var name = json.get("name").getAsString();
             var input = Input.fromJson(json.get("input"));
-            return new SplitClassesResources(name, input);
+            var excludePatternElement = json.get("excludePatterns");
+            var excludePattern = excludePatternElement == null ? null : Input.fromJson(json.get("excludePatterns"));
+            return new SplitClassesResources(name, input, excludePattern);
         }
 
         @Override
@@ -154,7 +192,7 @@ public sealed interface TaskModel {
         }
     }
 
-    record ListClasspath(String name, Input versionJson) implements TaskModel {
+    record ListClasspath(String name, Input versionJson, @Nullable Input additionalLibraries) implements TaskModel {
         @Override
         public String type() {
             return "listClasspath";
@@ -166,13 +204,18 @@ public sealed interface TaskModel {
             json.addProperty("type", type());
             json.addProperty("name", name);
             json.add("versionJson", versionJson.toJson());
+            if (additionalLibraries != null) {
+                json.add("additionalLibraries", additionalLibraries.toJson());
+            }
             return json;
         }
 
         static ListClasspath fromJson(JsonObject json) {
             var name = json.get("name").getAsString();
             var versionJson = Input.fromJson(json.get("versionJson"));
-            return new ListClasspath(name, versionJson);
+            var additionalLibrariesElement = json.get("additionalLibraries");
+            var additionalLibraries = additionalLibrariesElement == null ? null : Input.fromJson(additionalLibrariesElement);
+            return new ListClasspath(name, versionJson, additionalLibraries);
         }
     }
 

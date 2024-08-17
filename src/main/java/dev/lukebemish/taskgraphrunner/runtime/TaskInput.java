@@ -5,6 +5,7 @@ import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonPrimitive;
 import dev.lukebemish.taskgraphrunner.model.Input;
+import dev.lukebemish.taskgraphrunner.model.PathSensitivity;
 import dev.lukebemish.taskgraphrunner.model.WorkItem;
 import dev.lukebemish.taskgraphrunner.runtime.util.HashUtils;
 
@@ -279,9 +280,16 @@ public sealed interface TaskInput extends RecordedInput {
     }
 
     static ValueInput value(String name, Input modelInput, WorkItem workItem) {
+        return value(name, modelInput, workItem, null);
+    }
+
+    static ValueInput value(String name, Input modelInput, WorkItem workItem, Object defaultValue) {
         return switch (modelInput) {
             case Input.ParameterInput parameterInput -> {
                 JsonElement json = workItem.parameters().get(parameterInput.parameter());
+                if (json == null && defaultValue != null) {
+                    yield new ValueInput(name, defaultValue);
+                }
                 if (json == null || !json.isJsonPrimitive()) {
                     throw new IllegalArgumentException("No such primitive parameter `"+parameterInput.parameter()+"`");
                 }
@@ -307,9 +315,20 @@ public sealed interface TaskInput extends RecordedInput {
     }
 
     static ValueListInput values(String name, Input modelInput, WorkItem workItem) {
+        return values(name, modelInput, workItem, null);
+    }
+
+    static ValueListInput values(String name, Input modelInput, WorkItem workItem, List<Object> defaults) {
         return switch (modelInput) {
             case Input.ParameterInput parameterInput -> {
                 JsonElement json = workItem.parameters().get(parameterInput.parameter());
+                if (json == null && defaults != null) {
+                    List<ValueInput> inputs = new ArrayList<>(defaults.size());
+                    for (int i = 0; i < defaults.size(); i++) {
+                        inputs.add(new ValueInput(name+"_"+i, defaults.get(i)));
+                    }
+                    yield new ValueListInput(name, inputs);
+                }
                 if (json == null || !json.isJsonArray()) {
                     throw new IllegalArgumentException("No such array parameter `"+parameterInput.parameter()+"`");
                 }
@@ -324,8 +343,8 @@ public sealed interface TaskInput extends RecordedInput {
                 }
                 yield new ValueListInput(name, inputs);
             }
-            case Input.TaskInput taskInput -> throw new IllegalArgumentException("Cannot convert task input to value");
-            case Input.DirectInput directInput -> throw new IllegalArgumentException("Cannot convert direct input to value");
+            case Input.TaskInput ignored -> throw new IllegalArgumentException("Cannot convert task input to value list");
+            case Input.DirectInput ignored -> throw new IllegalArgumentException("Cannot convert direct input to value list");
         };
     }
 
@@ -347,7 +366,7 @@ public sealed interface TaskInput extends RecordedInput {
                 }
                 yield new TaskOutputInput(name, new TaskOutput(taskInput.task(), taskInput.output()));
             }
-            case Input.DirectInput directInput -> new FileInput(name, Path.of(directInput.value()), pathSensitivity);
+            case Input.DirectInput directInput -> new FileInput(name, pathNotation(context, directInput.value()), pathSensitivity);
         };
     }
 

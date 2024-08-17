@@ -5,7 +5,7 @@ import dev.lukebemish.taskgraphrunner.model.Distribution;
 import dev.lukebemish.taskgraphrunner.model.TaskModel;
 import dev.lukebemish.taskgraphrunner.model.WorkItem;
 import dev.lukebemish.taskgraphrunner.runtime.Context;
-import dev.lukebemish.taskgraphrunner.runtime.PathSensitivity;
+import dev.lukebemish.taskgraphrunner.model.PathSensitivity;
 import dev.lukebemish.taskgraphrunner.runtime.Task;
 import dev.lukebemish.taskgraphrunner.runtime.TaskInput;
 import dev.lukebemish.taskgraphrunner.runtime.util.DownloadUtils;

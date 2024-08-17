@@ -12,6 +12,9 @@ import dev.lukebemish.taskgraphrunner.runtime.tasks.DownloadDistributionTask;
 import dev.lukebemish.taskgraphrunner.runtime.tasks.DownloadJsonTask;
 import dev.lukebemish.taskgraphrunner.runtime.tasks.DownloadManifestTask;
 import dev.lukebemish.taskgraphrunner.runtime.tasks.DownloadMappingsTask;
+import dev.lukebemish.taskgraphrunner.runtime.tasks.ListClasspathTask;
+import dev.lukebemish.taskgraphrunner.runtime.tasks.SplitClassesResourcesTask;
+import dev.lukebemish.taskgraphrunner.runtime.tasks.ToolTask;
 import dev.lukebemish.taskgraphrunner.runtime.util.HashUtils;
 
 import java.io.ByteArrayOutputStream;
@@ -80,6 +83,11 @@ public abstract class Task implements RecordedInput {
             )
         );
         var statePath = context.taskStatePath(name());
+        try {
+            Files.createDirectories(statePath.getParent());
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
         if (Files.exists(statePath)) {
             try (var reader = Files.newBufferedReader(statePath, StandardCharsets.UTF_8)) {
                 JsonObject existingState = GSON.fromJson(reader, JsonObject.class);
@@ -248,6 +256,9 @@ public abstract class Task implements RecordedInput {
             case TaskModel.DownloadJson downloadJson -> new DownloadJsonTask(downloadJson, workItem, context);
             case TaskModel.DownloadDistribution downloadDistribution -> new DownloadDistributionTask(downloadDistribution, workItem, context);
             case TaskModel.DownloadMappings downloadMappings -> new DownloadMappingsTask(downloadMappings, workItem, context);
+            case TaskModel.SplitClassesResources splitClassesResources -> new SplitClassesResourcesTask(splitClassesResources, workItem, context);
+            case TaskModel.Tool tool -> new ToolTask(tool, workItem, context);
+            case TaskModel.ListClasspath listClasspath -> new ListClasspathTask(listClasspath, workItem, context);
             default -> throw new UnsupportedOperationException("Not yet implemented");
         };
     }
