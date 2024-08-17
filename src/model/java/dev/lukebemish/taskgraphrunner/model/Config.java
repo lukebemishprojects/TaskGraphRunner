@@ -1,4 +1,4 @@
-package dev.lukebemish.taskgraphmodel.model;
+package dev.lukebemish.taskgraphrunner.model;
 
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
@@ -7,7 +7,7 @@ import com.google.gson.JsonObject;
 import java.util.List;
 
 public record Config(List<TaskModel> tasks, List<WorkItem> workItems) {
-    JsonElement toJson() {
+    public JsonElement toJson() {
         JsonObject json = new JsonObject();
         var workItemsArray = new JsonArray();
         for (WorkItem workItem : workItems) {
@@ -22,7 +22,7 @@ public record Config(List<TaskModel> tasks, List<WorkItem> workItems) {
         return json;
     }
 
-    static Config fromJson(JsonElement json) {
+    public static Config fromJson(JsonElement json) {
         if (json.isJsonObject()) {
             var jsonObject = json.getAsJsonObject();
             var workItemsArray = jsonObject.getAsJsonArray("workItems");

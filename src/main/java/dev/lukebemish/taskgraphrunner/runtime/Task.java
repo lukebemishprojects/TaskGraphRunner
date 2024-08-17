@@ -1,18 +1,29 @@
-package dev.lukebemish.taskgraphmodel.runtime;
+package dev.lukebemish.taskgraphrunner.runtime;
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
+import com.google.gson.JsonPrimitive;
+import dev.lukebemish.taskgraphrunner.model.TaskModel;
+import dev.lukebemish.taskgraphrunner.model.WorkItem;
+import dev.lukebemish.taskgraphrunner.runtime.tasks.DownloadDistributionTask;
+import dev.lukebemish.taskgraphrunner.runtime.tasks.DownloadJsonTask;
+import dev.lukebemish.taskgraphrunner.runtime.tasks.DownloadManifestTask;
+import dev.lukebemish.taskgraphrunner.runtime.tasks.DownloadMappingsTask;
+import dev.lukebemish.taskgraphrunner.runtime.util.HashUtils;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
-import java.security.DigestInputStream;
+import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
 
@@ -34,13 +45,37 @@ public abstract class Task implements RecordedInput {
     public abstract Map<String, String> outputTypes();
 
     private volatile byte[] referenceHash;
+    private volatile byte[] contentsHash;
 
     private boolean executed;
+    private boolean running;
+
+    synchronized void execute(Context context, Map<String, Path> outputDestinations) {
+        // TODO: locking
+        execute(context);
+        for (var entry : outputDestinations.entrySet()) {
+            var outputPath = context.taskOutputPath(name(), entry.getKey());
+            try {
+                Files.copy(outputPath, entry.getValue(), StandardCopyOption.REPLACE_EXISTING);
+            } catch (IOException e) {
+                throw new UncheckedIOException(e);
+            }
+        }
+    }
 
     synchronized void execute(Context context) {
-        // TODO: locking
         if (executed) {
             return;
+        }
+        if (running) {
+            throw new IllegalStateException("Task `"+name+"` has a circular dependency");
+        }
+        running = true;
+        // Run prerequisite tasks
+        for (TaskInput input : inputs()) {
+            for (String dependency : input.dependencies()) {
+                context.getTask(dependency).execute(context);
+            }
         }
         var statePath = context.taskStatePath(name());
         if (Files.exists(statePath)) {
@@ -48,6 +83,11 @@ public abstract class Task implements RecordedInput {
                 JsonObject existingState = GSON.fromJson(reader, JsonObject.class);
                 JsonElement existingInputState = existingState.get("inputs");
                 var targetHashes = existingState.get("hashes").getAsJsonObject();
+                var lastExecutedJson = existingState.get("lastExecuted");
+                long lastExecuted = 0;
+                if (lastExecutedJson != null) {
+                    lastExecuted = lastExecutedJson.getAsLong();
+                }
                 boolean allOutputsMatch = true;
                 for (var output : outputTypes().keySet()) {
                     var oldHashElement = targetHashes.get(output);
@@ -61,21 +101,18 @@ public abstract class Task implements RecordedInput {
                         allOutputsMatch = false;
                         break;
                     }
-                    MessageDigest digest = MessageDigest.getInstance("MD5");
-                    try (var stream = Files.newInputStream(outputPath);
-                         var dis = new DigestInputStream(stream, digest)) {
-                        dis.readAllBytes();
-                    }
-                    var hash = String.format("%032x", new java.math.BigInteger(1, digest.digest()));
+                    var hash = HashUtils.hash(outputPath);
                     if (!hash.equals(oldHash)) {
                         allOutputsMatch = false;
                         break;
                     }
                 }
-                if (allOutputsMatch) {
+                if (allOutputsMatch && upToDate(lastExecuted, context)) {
                     JsonElement newInputState = recordedValue(context);
                     if (newInputState.equals(existingInputState)) {
+                        updateState(existingState, context);
                         executed = true;
+                        running = false;
                         return;
                     }
                 }
@@ -84,16 +121,20 @@ public abstract class Task implements RecordedInput {
                 // TODO: log it
             }
         }
-        // Run prerequisite tasks
-        for (TaskInput input : inputs()) {
-            for (String dependency : input.dependencies()) {
-                context.getTask(dependency).execute(context);
-            }
-        }
         // Something was not up-to-date -- so we run everything
         run(context);
         saveState(context);
         executed = true;
+        running = false;
+    }
+
+    private void updateState(JsonObject oldState, Context context) {
+        oldState.add("lastAccessed", new JsonPrimitive(System.currentTimeMillis()));
+        try (var writer = Files.newBufferedWriter(context.taskStatePath(name()), StandardCharsets.UTF_8)) {
+            GSON.toJson(oldState, writer);
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
     }
 
     private void saveState(Context context) {
@@ -104,14 +145,9 @@ public abstract class Task implements RecordedInput {
             var outputPath = context.taskOutputPath(name(), output);
             if (Files.exists(outputPath)) {
                 try {
-                    MessageDigest digest = MessageDigest.getInstance("MD5");
-                    try (var stream = Files.newInputStream(outputPath);
-                         var dis = new DigestInputStream(stream, digest)) {
-                        dis.readAllBytes();
-                    }
-                    var hash = String.format("%032x", new java.math.BigInteger(1, digest.digest()));
+                    var hash = HashUtils.hash(outputPath);
                     outputHashes.addProperty(output, hash);
-                } catch (NoSuchAlgorithmException | IOException e) {
+                } catch (IOException e) {
                     throw new RuntimeException(e);
                 }
             } else {
@@ -121,6 +157,9 @@ public abstract class Task implements RecordedInput {
         JsonObject state = new JsonObject();
         state.add("inputs", inputState);
         state.add("hashes", outputHashes);
+        var currentTime = System.currentTimeMillis();
+        state.add("lastAccessed", new JsonPrimitive(currentTime));
+        state.add("lastExecuted", new JsonPrimitive(currentTime));
         try (var writer = Files.newBufferedWriter(statePath, StandardCharsets.UTF_8)) {
             GSON.toJson(state, writer);
         } catch (IOException e) {
@@ -150,12 +189,27 @@ public abstract class Task implements RecordedInput {
 
     @Override
     public void hashContents(ByteConsumer digest, Context context) {
-        digest.update(name().getBytes(StandardCharsets.UTF_8));
-        digest.update(getClass().getName().getBytes(StandardCharsets.UTF_8));
-        for (TaskInput input : inputs()) {
-            digest.update(input.name().getBytes(StandardCharsets.UTF_8));
-            input.hashContents(digest, context);
+        if (contentsHash == null) {
+            synchronized (this) {
+                if (contentsHash == null) {
+                    var stream = new ByteArrayOutputStream();
+                    var consumer = ByteConsumer.of(stream);
+                    consumer.update(name().getBytes(StandardCharsets.UTF_8));
+                    consumer.update(getClass().getName().getBytes(StandardCharsets.UTF_8));
+                    for (TaskInput input : inputs()) {
+                        for (var dependency : input.dependencies()) {
+                            if (!context.getTask(dependency).executed) {
+                                throw new IllegalStateException("Dependency `"+dependency+"` of task `"+name()+"` has not been executed but was requested");
+                            }
+                        }
+                        consumer.update(input.name().getBytes(StandardCharsets.UTF_8));
+                        input.hashContents(consumer, context);
+                    }
+                    contentsHash = stream.toByteArray();
+                }
+            }
         }
+        digest.update(contentsHash);
     }
 
     @Override
@@ -171,15 +225,29 @@ public abstract class Task implements RecordedInput {
             try {
                 MessageDigest digest = MessageDigest.getInstance("MD5");
                 input.hashContents(ByteConsumer.of(digest), context);
-                var hash = String.format("%032x", new java.math.BigInteger(1, digest.digest()));
+                var hash = HexFormat.of().formatHex(digest.digest());
                 inputObject.addProperty("key", hash);
             } catch (NoSuchAlgorithmException e) {
                 throw new RuntimeException(e);
             }
-            inputs.add(input.recordedValue(context));
+            inputs.add(inputObject);
         }
         state.add("inputs", inputs);
         return state;
+    }
+
+    protected boolean upToDate(long lastExecuted, Context context) {
+        return true;
+    }
+
+    public static Task task(TaskModel model, WorkItem workItem, Context context) {
+        return switch (model) {
+            case TaskModel.DownloadManifest downloadManifest -> new DownloadManifestTask(downloadManifest);
+            case TaskModel.DownloadJson downloadJson -> new DownloadJsonTask(downloadJson, workItem, context);
+            case TaskModel.DownloadDistribution downloadDistribution -> new DownloadDistributionTask(downloadDistribution, workItem, context);
+            case TaskModel.DownloadMappings downloadMappings -> new DownloadMappingsTask(downloadMappings, workItem, context);
+            default -> throw new UnsupportedOperationException("Not yet implemented");
+        };
     }
 
     protected abstract void run(Context context);

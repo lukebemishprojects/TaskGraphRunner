@@ -1,4 +1,4 @@
-package dev.lukebemish.taskgraphmodel.model;
+package dev.lukebemish.taskgraphrunner.model;
 
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
@@ -54,7 +54,7 @@ public sealed interface TaskModel {
         }
     }
 
-    record DownloadJson(String name, String version, Input manifest) implements TaskModel {
+    record DownloadJson(String name, Input version, Input manifest) implements TaskModel {
 
         @Override
         public String type() {
@@ -66,20 +66,20 @@ public sealed interface TaskModel {
             var json = new JsonObject();
             json.addProperty("type", type());
             json.addProperty("name", name);
-            json.addProperty("version", version);
+            json.add("version", version.toJson());
             json.add("manifest", manifest.toJson());
             return json;
         }
 
         static DownloadJson fromJson(JsonObject json) {
             var name = json.get("name").getAsString();
-            var version = json.get("version").getAsString();
+            var version = Input.fromJson(json.get("version"));
             var manifest = Input.fromJson(json.get("manifest"));
             return new DownloadJson(name, version, manifest);
         }
     }
 
-    record DownloadDistribution(String name, Distribution distribution, Input versionJson) implements TaskModel {
+    record DownloadDistribution(String name, Input distribution, Input versionJson) implements TaskModel {
         @Override
         public String type() {
             return "downloadDistribution";
@@ -97,13 +97,13 @@ public sealed interface TaskModel {
 
         static DownloadDistribution fromJson(JsonObject json) {
             var name = json.get("name").getAsString();
-            var distribution = Distribution.fromJson(json.get("distribution"));
+            var distribution = Input.fromJson(json.get("distribution"));
             var versionJson = Input.fromJson(json.get("versionJson"));
             return new DownloadDistribution(name, distribution, versionJson);
         }
     }
 
-    record DownloadMappings(String name, Distribution distribution, Input versionJson) implements TaskModel {
+    record DownloadMappings(String name, Input distribution, Input versionJson) implements TaskModel {
         @Override
         public String type() {
             return "downloadMappings";
@@ -121,7 +121,7 @@ public sealed interface TaskModel {
 
         static DownloadMappings fromJson(JsonObject json) {
             var name = json.get("name").getAsString();
-            var distribution = Distribution.fromJson(json.get("distribution"));
+            var distribution = Input.fromJson(json.get("distribution"));
             var versionJson = Input.fromJson(json.get("versionJson"));
             return new DownloadMappings(name, distribution, versionJson);
         }

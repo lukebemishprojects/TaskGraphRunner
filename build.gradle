@@ -43,7 +43,19 @@ def mainClassName = 'dev.lukebemish.taskgraphrunner.cli.Main'
 
 jar {
     manifest {
-        attributes 'Main-Class': mainClassName
+        attributes([
+            'Main-Class': mainClassName,
+            'Implementation-Version': project.version as String
+        ])
+    }
+}
+
+shadowJar {
+    manifest {
+        attributes([
+            'Main-Class': mainClassName,
+            'Implementation-Version': project.version as String
+        ])
     }
 }
 
@@ -69,6 +81,7 @@ dependencies {
     compileOnly 'org.jetbrains:annotations:24.1.0'
     implementation 'info.picocli:picocli:4.7.6'
     implementation 'net.fabricmc:fabric-loom-native:0.2.1'
+    implementation 'org.slf4j:slf4j-simple:2.0.13'
     annotationProcessor 'info.picocli:picocli-codegen:4.7.6'
     implementation(project(':')) {
         capabilities {
@@ -76,4 +89,8 @@ dependencies {
         }
     }
     modelApi 'com.google.code.gson:gson:2.11.0'
+}
+
+compileJava {
+    options.compilerArgs += ["-Aproject=${project.group}/${project.name}"]
 }

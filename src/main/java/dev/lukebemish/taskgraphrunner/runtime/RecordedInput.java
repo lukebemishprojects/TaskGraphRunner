@@ -1,4 +1,4 @@
-package dev.lukebemish.taskgraphmodel.runtime;
+package dev.lukebemish.taskgraphrunner.runtime;
 
 import com.google.gson.JsonElement;
 

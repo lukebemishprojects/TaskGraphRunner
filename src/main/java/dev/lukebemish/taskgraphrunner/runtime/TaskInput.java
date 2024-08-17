@@ -1,11 +1,12 @@
-package dev.lukebemish.taskgraphmodel.runtime;
+package dev.lukebemish.taskgraphrunner.runtime;
 
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonPrimitive;
-import dev.lukebemish.taskgraphmodel.model.Input;
-import dev.lukebemish.taskgraphmodel.model.WorkItem;
+import dev.lukebemish.taskgraphrunner.model.Input;
+import dev.lukebemish.taskgraphrunner.model.WorkItem;
+import dev.lukebemish.taskgraphrunner.runtime.util.HashUtils;
 
 import java.io.File;
 import java.io.IOException;
@@ -67,12 +68,8 @@ public sealed interface TaskInput extends RecordedInput {
                     buffer.putShort(s);
                     digest.update(buffer);
                 }
-                case Byte b -> {
-                    digest.update(b);
-                }
-                case Boolean bool -> {
-                    digest.update(bool ? (byte) 1 : (byte) 0);
-                }
+                case Byte b -> digest.update(b);
+                case Boolean bool -> digest.update(bool ? (byte) 1 : (byte) 0);
                 case Number number -> {
                     ByteBuffer buffer = ByteBuffer.allocate(Integer.BYTES);
                     buffer.putInt(Objects.hashCode(number));
@@ -114,12 +111,8 @@ public sealed interface TaskInput extends RecordedInput {
         @Override
         public void hashContents(ByteConsumer digest, Context context) {
             HasFileInput.super.hashContents(digest, context);
-            try (var is = Files.newInputStream(path)) {
-                byte[] buffer = new byte[2048];
-                int read;
-                while ((read = is.read(buffer)) != -1) {
-                    digest.update(buffer, 0, read);
-                }
+            try {
+                HashUtils.hash(path, digest);
             } catch (IOException e) {
                 throw new UncheckedIOException(e);
             }
@@ -144,18 +137,14 @@ public sealed interface TaskInput extends RecordedInput {
 
         @Override
         public void hashReference(ByteConsumer digest, Context context) {
-            var task = context.getTask(output.taskName());
-            task.hashReference(digest, context);
+            digest.update(output.taskName().getBytes(StandardCharsets.UTF_8));
+            digest.update(output.name().getBytes(StandardCharsets.UTF_8));
         }
 
         @Override
         public void hashContents(ByteConsumer digest, Context context) {
-            try (var is = Files.newInputStream(output.getPath(context))) {
-                byte[] buffer = new byte[2048];
-                int read;
-                while ((read = is.read(buffer)) != -1) {
-                    digest.update(buffer, 0, read);
-                }
+            try {
+                HashUtils.hash(output.getPath(context), digest);
             } catch (IOException e) {
                 throw new UncheckedIOException(e);
             }
@@ -216,16 +205,7 @@ public sealed interface TaskInput extends RecordedInput {
         @Override
         public List<Path> paths(Context context) {
             try (var reader = Files.newBufferedReader(libraryFile.path(context))) {
-                return reader.lines().map(line -> {
-                    if (line.startsWith("file:")) {
-                        return Path.of(line.substring("file:".length()));
-                    } else if (line.startsWith("artifact:")) {
-                        var notation = line.substring("artifact:".length());
-                        return context.findArtifact(notation);
-                    } else {
-                        throw new IllegalArgumentException("Unknown library line: "+line);
-                    }
-                }).collect(Collectors.toList());
+                return reader.lines().map(line -> pathNotation(context, line)).collect(Collectors.toList());
             } catch (IOException e) {
                 throw new UncheckedIOException(e);
             }
@@ -240,12 +220,8 @@ public sealed interface TaskInput extends RecordedInput {
         public void hashContents(ByteConsumer digest, Context context) {
             var paths = paths(context);
             for (Path path : paths) {
-                try (var is = Files.newInputStream(path)) {
-                    byte[] buffer = new byte[2048];
-                    int read;
-                    while ((read = is.read(buffer)) != -1) {
-                        digest.update(buffer, 0, read);
-                    }
+                try {
+                    HashUtils.hash(path, digest);
                 } catch (IOException e) {
                     throw new UncheckedIOException(e);
                 }
@@ -258,6 +234,17 @@ public sealed interface TaskInput extends RecordedInput {
             object.addProperty("type", "libraryList");
             object.add("file", libraryFile.recordedValue(context));
             return object;
+        }
+    }
+
+    private static Path pathNotation(Context context, String line) {
+        if (line.startsWith("file:")) {
+            return Path.of(line.substring("file:".length()));
+        } else if (line.startsWith("artifact:")) {
+            var notation = line.substring("artifact:".length());
+            return context.findArtifact(notation);
+        } else {
+            throw new IllegalArgumentException("Unknown library line: "+ line);
         }
     }
 
@@ -298,10 +285,25 @@ public sealed interface TaskInput extends RecordedInput {
                 if (json == null || !json.isJsonPrimitive()) {
                     throw new IllegalArgumentException("No such primitive parameter `"+parameterInput.parameter()+"`");
                 }
-                yield new ValueInput(name, json.getAsJsonPrimitive());
+                yield new ValueInput(name, unboxPrimitive(json.getAsJsonPrimitive()));
             }
-            case Input.TaskInput taskInput -> throw new IllegalArgumentException("Cannot convert task input to value");
+            case Input.TaskInput ignored -> throw new IllegalArgumentException("Cannot convert task input to value");
+            case Input.DirectInput directInput -> new ValueInput(name, directInput.value());
         };
+    }
+
+    private static Object unboxPrimitive(JsonPrimitive primitive) {
+        Object value;
+        if (primitive.isBoolean()) {
+            value = primitive.getAsBoolean();
+        } else if (primitive.isNumber()) {
+            value = primitive.getAsNumber();
+        } else if (primitive.isString()) {
+            value = primitive.getAsString();
+        } else {
+            throw new IllegalArgumentException("Unsupported primitive type: "+ primitive);
+        }
+        return value;
     }
 
     static ValueListInput values(String name, Input modelInput, WorkItem workItem) {
@@ -318,15 +320,16 @@ public sealed interface TaskInput extends RecordedInput {
                     if (!value.isJsonPrimitive()) {
                         throw new IllegalArgumentException("Array parameter `"+parameterInput.parameter()+"` contains non-primitive value at index "+i);
                     }
-                    inputs.add(new ValueInput(name+"_"+i, value));
+                    inputs.add(new ValueInput(name+"_"+i, unboxPrimitive(value.getAsJsonPrimitive())));
                 }
                 yield new ValueListInput(name, inputs);
             }
             case Input.TaskInput taskInput -> throw new IllegalArgumentException("Cannot convert task input to value");
+            case Input.DirectInput directInput -> throw new IllegalArgumentException("Cannot convert direct input to value");
         };
     }
 
-    static HasFileInput file(String name, Input modelInput, WorkItem workItem, PathSensitivity pathSensitivity) {
+    static HasFileInput file(String name, Input modelInput, WorkItem workItem, Context context, PathSensitivity pathSensitivity) {
         return switch (modelInput) {
             case Input.ParameterInput parameterInput -> {
                 JsonElement json = workItem.parameters().get(parameterInput.parameter());
@@ -336,7 +339,7 @@ public sealed interface TaskInput extends RecordedInput {
                 if (!json.getAsJsonPrimitive().isString()) {
                     throw new IllegalArgumentException("Parameter `"+parameterInput.parameter()+"` is not a string");
                 }
-                yield new FileInput(name, Path.of(json.getAsJsonPrimitive().getAsString()), pathSensitivity);
+                yield new FileInput(name, pathNotation(context, json.getAsJsonPrimitive().getAsString()), pathSensitivity);
             }
             case Input.TaskInput taskInput -> {
                 if (pathSensitivity != PathSensitivity.NONE) {
@@ -344,13 +347,20 @@ public sealed interface TaskInput extends RecordedInput {
                 }
                 yield new TaskOutputInput(name, new TaskOutput(taskInput.task(), taskInput.output()));
             }
+            case Input.DirectInput directInput -> new FileInput(name, Path.of(directInput.value()), pathSensitivity);
         };
     }
 
-    static FileListInput files(String name, Input modelInput, WorkItem workItem, PathSensitivity pathSensitivity) {
+    static FileListInput files(String name, Input modelInput, WorkItem workItem, Context context, PathSensitivity pathSensitivity) {
         return switch (modelInput) {
             case Input.ParameterInput parameterInput -> {
                 JsonElement json = workItem.parameters().get(parameterInput.parameter());
+                if (json != null && json.isJsonPrimitive()) {
+                    if (!json.getAsJsonPrimitive().isString()) {
+                        throw new IllegalArgumentException("Parameter `"+parameterInput.parameter()+"` is not a string");
+                    }
+                    yield new LibraryListFileListInput(name, new FileInput(name, pathNotation(context, json.getAsJsonPrimitive().getAsString()), pathSensitivity));
+                }
                 if (json == null || !json.isJsonArray()) {
                     throw new IllegalArgumentException("No such array parameter `"+parameterInput.parameter()+"`");
                 }
@@ -363,7 +373,7 @@ public sealed interface TaskInput extends RecordedInput {
                     if (!value.getAsJsonPrimitive().isString()) {
                         throw new IllegalArgumentException("Array parameter `"+parameterInput.parameter()+"` contains non-string value at index "+i);
                     }
-                    inputs.add(new FileInput(name+"_"+i, Path.of(value.getAsJsonPrimitive().getAsString()), pathSensitivity));
+                    inputs.add(new FileInput(name+"_"+i, pathNotation(context, json.getAsJsonPrimitive().getAsString()), pathSensitivity));
                 }
                 yield new SimpleFileListInput(name, inputs);
             }
@@ -373,6 +383,7 @@ public sealed interface TaskInput extends RecordedInput {
                 }
                 yield new LibraryListFileListInput(name, new TaskOutputInput(name, new TaskOutput(taskInput.task(), taskInput.output())));
             }
+            case Input.DirectInput directInput -> new LibraryListFileListInput(name, new FileInput(name, Path.of(directInput.value()), pathSensitivity));
         };
     }
 }

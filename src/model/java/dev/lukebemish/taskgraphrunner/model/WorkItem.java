@@ -1,13 +1,11 @@
-package dev.lukebemish.taskgraphmodel.model;
+package dev.lukebemish.taskgraphrunner.model;
 
-import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonPrimitive;
 
 import java.nio.file.Path;
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 
 public record WorkItem(Map<Output, Path> results, Map<String, JsonElement> parameters) {
