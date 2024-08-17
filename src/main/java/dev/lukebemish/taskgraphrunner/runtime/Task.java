@@ -16,6 +16,8 @@ import dev.lukebemish.taskgraphrunner.runtime.tasks.ListClasspathTask;
 import dev.lukebemish.taskgraphrunner.runtime.tasks.SplitClassesResourcesTask;
 import dev.lukebemish.taskgraphrunner.runtime.tasks.ToolTask;
 import dev.lukebemish.taskgraphrunner.runtime.util.HashUtils;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -31,6 +33,7 @@ import java.util.List;
 import java.util.Map;
 
 public abstract class Task implements RecordedInput {
+    private static final Logger LOGGER = LoggerFactory.getLogger(Task.class);
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
 
     private final String name;
@@ -123,6 +126,7 @@ public abstract class Task implements RecordedInput {
                         updateState(existingState, context);
                         executed = true;
                         running = false;
+                        LOGGER.info("Task `"+name+"` is up-to-date");
                         return;
                     }
                 }
@@ -132,8 +136,10 @@ public abstract class Task implements RecordedInput {
             }
         }
         // Something was not up-to-date -- so we run everything
+        LOGGER.info("Starting task `"+name+"`.");
         run(context);
         saveState(context);
+        LOGGER.info("Finished task `"+name+"`.");
         executed = true;
         running = false;
     }
