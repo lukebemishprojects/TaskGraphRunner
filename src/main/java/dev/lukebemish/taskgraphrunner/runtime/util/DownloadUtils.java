@@ -1,5 +1,8 @@
 package dev.lukebemish.taskgraphrunner.runtime.util;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.io.IOException;
 import java.net.HttpURLConnection;
 import java.net.URI;
@@ -7,10 +10,9 @@ import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
-import java.util.logging.Logger;
 
 public final class DownloadUtils {
-    private static final Logger LOGGER = Logger.getLogger(DownloadUtils.class.getName());
+    private static final Logger LOGGER = LoggerFactory.getLogger(DownloadUtils.class);
 
     private static final String USER_AGENT = "TaskGraphRunner/"+ DownloadUtils.class.getPackage().getImplementationVersion();
 

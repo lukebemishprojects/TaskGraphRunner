@@ -4,6 +4,7 @@ import dev.lukebemish.taskgraphrunner.runtime.RecordedInput;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.security.MessageDigest;
@@ -25,6 +26,10 @@ public final class HashUtils {
         }
     }
 
+    public static void hash(String key, RecordedInput.ByteConsumer digest) {
+        digest.update(key.getBytes(StandardCharsets.UTF_8));
+    }
+
     public static String hash(Path path, String algorithm) throws IOException {
         MessageDigest digest;
         try {
@@ -36,7 +41,22 @@ public final class HashUtils {
         return HexFormat.of().formatHex(digest.digest());
     }
 
+    public static String hash(String key, String algorithm) {
+        MessageDigest digest;
+        try {
+            digest = MessageDigest.getInstance(algorithm);
+        } catch (NoSuchAlgorithmException e) {
+            throw new RuntimeException(e);
+        }
+        hash(key, RecordedInput.ByteConsumer.of(digest));
+        return HexFormat.of().formatHex(digest.digest());
+    }
+
     public static String hash(Path path) throws IOException {
         return hash(path, "MD5");
+    }
+
+    public static String hash(String key) {
+        return hash(key, "MD5");
     }
 }

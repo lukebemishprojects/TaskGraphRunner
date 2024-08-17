@@ -5,6 +5,8 @@ import dev.lukebemish.taskgraphrunner.runtime.Context;
 import dev.lukebemish.taskgraphrunner.runtime.Task;
 import dev.lukebemish.taskgraphrunner.runtime.TaskInput;
 import dev.lukebemish.taskgraphrunner.runtime.util.DownloadUtils;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
@@ -13,10 +15,9 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
-import java.util.logging.Logger;
 
 public class DownloadManifestTask extends Task {
-    private static final Logger LOGGER = Logger.getLogger(DownloadManifestTask.class.getName());
+    private static final Logger LOGGER = LoggerFactory.getLogger(DownloadManifestTask.class);
 
     public DownloadManifestTask(TaskModel.DownloadManifest model) {
         super(model.name());
@@ -44,7 +45,7 @@ public class DownloadManifestTask extends Task {
         } catch (IOException e) {
             if (exists) {
                 // The file already exists, so lets ignore this error for now but lets log it
-                LOGGER.warning("Failed to download manifest, using existing file: " + e.getMessage());
+                LOGGER.warn("Failed to download manifest, using existing file: " + e.getMessage());
             } else {
                 throw new UncheckedIOException(e);
             }

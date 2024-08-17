@@ -51,7 +51,7 @@ public abstract class Task implements RecordedInput {
     private boolean running;
 
     synchronized void execute(Context context, Map<String, Path> outputDestinations) {
-        // TODO: locking
+        // This operation is NOT locked; locking is handled for a full invocation execution instead
         execute(context);
         for (var entry : outputDestinations.entrySet()) {
             var outputPath = context.taskOutputPath(name(), entry.getKey());
@@ -63,7 +63,9 @@ public abstract class Task implements RecordedInput {
         }
     }
 
-    synchronized void execute(Context context) {
+    private synchronized void execute(Context context) {
+        // This operation is NOT locked; locking is handled for a full invocation execution instead
+
         if (executed) {
             return;
         }
@@ -72,11 +74,11 @@ public abstract class Task implements RecordedInput {
         }
         running = true;
         // Run prerequisite tasks
-        for (TaskInput input : inputs()) {
-            for (String dependency : input.dependencies()) {
-                context.getTask(dependency).execute(context);
-            }
-        }
+        inputs().parallelStream().forEach(input ->
+            input.dependencies().parallelStream().forEach(dependency ->
+                context.getTask(dependency).execute(context)
+            )
+        );
         var statePath = context.taskStatePath(name());
         if (Files.exists(statePath)) {
             try (var reader = Files.newBufferedReader(statePath, StandardCharsets.UTF_8)) {

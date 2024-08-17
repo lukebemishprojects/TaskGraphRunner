@@ -1,6 +1,7 @@
 package dev.lukebemish.taskgraphrunner.runtime;
 
 import dev.lukebemish.taskgraphrunner.model.Output;
+import dev.lukebemish.taskgraphrunner.runtime.util.LockManager;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -17,11 +18,14 @@ import java.util.Properties;
 public class Invocation implements Context {
     private final Path cacheDirectory;
 
+    private final LockManager lockManager;
+
     private final Map<String, Task> tasks = new HashMap<>();
     private final Map<String, Path> artifacts = new HashMap<>();
 
-    public Invocation(Path cacheDirectory) {
+    public Invocation(Path cacheDirectory) throws IOException {
         this.cacheDirectory = cacheDirectory;
+        this.lockManager = new LockManager(cacheDirectory.resolve("locks"));
     }
 
     public void artifactManifest(Path manifest) {
@@ -49,36 +53,42 @@ public class Invocation implements Context {
         if (outputType == null) {
             throw new IllegalArgumentException("No such output `"+outputName+"` for task `"+taskName+"`");
         }
-        MessageDigest digestReference;
-        MessageDigest contentsReference;
-        try {
-            digestReference = MessageDigest.getInstance("MD5");
-            contentsReference = MessageDigest.getInstance("MD5");
-        } catch (NoSuchAlgorithmException e) {
-            throw new RuntimeException(e);
-        }
-        task.hashReference(RecordedInput.ByteConsumer.of(digestReference), this);
-        task.hashContents(RecordedInput.ByteConsumer.of(contentsReference), this);
-        var hash = HexFormat.of().formatHex(digestReference.digest());
-        var contentsHash = HexFormat.of().formatHex(contentsReference.digest());
-        return cacheDirectory.resolve("results").resolve(taskName+"."+hash).resolve(contentsHash+"."+outputName+"."+outputType);
-    }
-
-    public Path taskStatePath(String taskName) {
-        var task = getTask(taskName);
-        MessageDigest digestReference;
         MessageDigest digestContents;
         try {
-            digestReference = MessageDigest.getInstance("MD5");
             digestContents = MessageDigest.getInstance("MD5");
         } catch (NoSuchAlgorithmException e) {
             throw new RuntimeException(e);
         }
-        task.hashReference(RecordedInput.ByteConsumer.of(digestReference), this);
         task.hashContents(RecordedInput.ByteConsumer.of(digestContents), this);
-        var hash = HexFormat.of().formatHex(digestReference.digest());
         var contentsHash = HexFormat.of().formatHex(digestContents.digest());
-        return cacheDirectory.resolve("results").resolve(taskName+"."+hash).resolve(contentsHash+".json");
+        return taskDirectory(taskName).resolve(contentsHash+"."+outputName+"."+outputType);
+    }
+
+    @Override
+    public Path taskDirectory(String taskName) {
+        var task = getTask(taskName);
+        MessageDigest digestReference;
+        try {
+            digestReference = MessageDigest.getInstance("MD5");
+        } catch (NoSuchAlgorithmException e) {
+            throw new RuntimeException(e);
+        }
+        task.hashReference(RecordedInput.ByteConsumer.of(digestReference), this);
+        var hash = HexFormat.of().formatHex(digestReference.digest());
+        return cacheDirectory.resolve("results").resolve(taskName+"."+hash);
+    }
+
+    public Path taskStatePath(String taskName) {
+        var task = getTask(taskName);
+        MessageDigest digestContents;
+        try {
+            digestContents = MessageDigest.getInstance("MD5");
+        } catch (NoSuchAlgorithmException e) {
+            throw new RuntimeException(e);
+        }
+        task.hashContents(RecordedInput.ByteConsumer.of(digestContents), this);
+        var contentsHash = HexFormat.of().formatHex(digestContents.digest());
+        return taskDirectory(taskName).resolve(contentsHash+".json");
     }
 
     @Override
@@ -99,15 +109,22 @@ public class Invocation implements Context {
         return artifact;
     }
 
+    @Override
+    public LockManager lockManager() {
+        return lockManager;
+    }
+
     public void execute(Map<Output, Path> results) {
         Map<String, Map<String, Path>> tasks = new LinkedHashMap<>();
         for (var entry : results.entrySet()) {
             var map = tasks.computeIfAbsent(entry.getKey().taskName(), k -> new LinkedHashMap<>());
             map.put(entry.getKey().name(), entry.getValue());
         }
-        for (var entry : tasks.entrySet()) {
-            var task = getTask(entry.getKey());
-            task.execute(this, entry.getValue());
+        try (var ignored = locks(tasks.keySet())) {
+            tasks.entrySet().parallelStream().forEach(entry -> {
+                var task = getTask(entry.getKey());
+                task.execute(this, entry.getValue());
+            });
         }
     }
 }
