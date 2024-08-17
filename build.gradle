@@ -1,0 +1,79 @@
+plugins {
+    id 'java'
+    id "com.gradleup.shadow" version '8.3.0'
+}
+
+group = 'dev.lukebemish'
+// TODO: managed versioning
+version = '0.1.0'
+
+repositories {
+    mavenCentral()
+    exclusiveContent {
+        forRepository {
+            maven {
+                name = "Fabric"
+                url = "https://maven.fabricmc.net/"
+            }
+        }
+        filter {
+            includeModule("net.fabricmc", "fabric-loom-native")
+        }
+    }
+}
+
+sourceSets {
+    model {}
+}
+
+java {
+    withSourcesJar()
+    withJavadocJar()
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(21)
+    }
+    registerFeature('model') {
+        usingSourceSet(sourceSets.model)
+        withSourcesJar()
+        withJavadocJar()
+    }
+}
+
+def mainClassName = 'dev.lukebemish.taskgraphrunner.cli.Main'
+
+jar {
+    manifest {
+        attributes 'Main-Class': mainClassName
+    }
+}
+
+AdhocComponentWithVariants javaComponent = (AdhocComponentWithVariants) components.java
+
+configurations {
+    externalTools {
+        canBeConsumed = true
+        canBeResolved = false
+        transitive = false
+        attributes {
+            attribute(Category.CATEGORY_ATTRIBUTE, objects.named(Category, Category.LIBRARY))
+            attribute(Usage.USAGE_ATTRIBUTE, objects.named(Usage, Usage.JAVA_RUNTIME))
+        }
+        outgoing {
+            capability "dev.lukebemish:taskgraphrunner-external-tools:${project.version}"
+        }
+        components.java.addVariantsFromConfiguration(it) {}
+    }
+}
+
+dependencies {
+    compileOnly 'org.jetbrains:annotations:24.1.0'
+    implementation 'info.picocli:picocli:4.7.6'
+    implementation 'net.fabricmc:fabric-loom-native:0.2.1'
+    annotationProcessor 'info.picocli:picocli-codegen:4.7.6'
+    implementation(project(':')) {
+        capabilities {
+            requireCapability("dev.lukebemish:taskgraphrunner-model")
+        }
+    }
+    modelApi 'com.google.code.gson:gson:2.11.0'
+}
