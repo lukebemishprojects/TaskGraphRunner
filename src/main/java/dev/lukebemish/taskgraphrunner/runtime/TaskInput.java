@@ -202,6 +202,10 @@ public sealed interface TaskInput extends RecordedInput {
     }
 
     record LibraryListFileListInput(String name, HasFileInput libraryFile) implements FileListInput {
+        @Override
+        public List<String> dependencies() {
+            return libraryFile.dependencies();
+        }
 
         @Override
         public List<Path> paths(Context context) {
@@ -276,6 +280,11 @@ public sealed interface TaskInput extends RecordedInput {
         @Override
         public List<Path> paths(Context context) {
             return inputs.stream().map(input -> input.path(context)).toList();
+        }
+
+        @Override
+        public List<String> dependencies() {
+            return inputs.stream().flatMap(input -> input.dependencies().stream()).toList();
         }
     }
 
