@@ -8,6 +8,7 @@ import picocli.CommandLine;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.file.Files;
+import java.nio.file.Path;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.nio.file.attribute.FileTime;
 import java.time.Instant;
@@ -51,49 +52,47 @@ public class Clean implements Runnable {
         }
         var deletedOutputs = new AtomicInteger();
         try (var dirs = Files.list(main.cacheDir.resolve("results"))) {
-            dirs.forEach(dir -> {
-                if (Files.isDirectory(dir)) {
-                    try (var ignored = lockManager.lock(dir.getFileName().toString())) {
-                        try (var files = Files.list(dir)) {
-                            files
-                                .filter(it -> {
-                                    try {
-                                        BasicFileAttributes attributes = Files.readAttributes(it, BasicFileAttributes.class);
-                                        return attributes.isRegularFile() && attributes.lastAccessTime().compareTo(outdated) < 0;
-                                    } catch (IOException e) {
-                                        return false;
-                                    }
-                                })
-                                .forEach(it -> {
-                                    try {
-                                        Files.delete(it);
-                                        deletedOutputs.incrementAndGet();
-                                    } catch (IOException e) {
-                                        LOGGER.error("Failed to delete outdated output file {}", it, e);
-                                    }
-                                });
-                        } catch (IOException e) {
-                            LOGGER.error("Issue deleting output files in {}", dir.getFileName(), e);
-                        }
-                        try (var files = Files.list(dir)) {
-                            if (files.findFirst().isEmpty()) {
-                                try {
-                                    Files.delete(dir);
-                                } catch (IOException e) {
-                                    LOGGER.error("Failed to delete empty output directory {}", dir, e);
-                                }
-                            }
-                        } catch (IOException e) {
-                            LOGGER.error("Issue deleting empty output directories", e);
-                        }
-                    }
-                }
-            });
+            dirs.forEach(dir -> deleteOutdated(lockManager, dir, outdated, deletedOutputs));
         } catch (IOException e) {
             LOGGER.error("Issue deleting output directories", e);
         }
         if (deletedOutputs.get() > 0) {
             LOGGER.info("Deleted {} outdated output files", deletedOutputs.get());
+        }
+    }
+
+    private static void deleteOutdated(LockManager lockManager, Path dir, FileTime outdated, AtomicInteger deletedOutputs) {
+        if (Files.isDirectory(dir)) {
+            try (var ignored = lockManager.lock(dir.getFileName().toString())) {
+                try (var files = Files.list(dir)) {
+                    files.forEach(it -> {
+                            try {
+                                BasicFileAttributes attributes = Files.readAttributes(it, BasicFileAttributes.class);
+                                if (attributes.isRegularFile() && attributes.lastAccessTime().compareTo(outdated) < 0) {
+                                    Files.delete(it);
+                                    deletedOutputs.incrementAndGet();
+                                } else if (attributes.isDirectory()) {
+                                    deleteOutdated(lockManager, it, outdated, deletedOutputs);
+                                }
+                            } catch (IOException e) {
+                                LOGGER.error("Issue while cleaning output file {} in {}", it.getFileName(), dir.getFileName(), e);
+                            }
+                        });
+                } catch (IOException e) {
+                    LOGGER.error("Issue deleting output files in {}", dir.getFileName(), e);
+                }
+                try (var files = Files.list(dir)) {
+                    if (files.findFirst().isEmpty()) {
+                        try {
+                            Files.delete(dir);
+                        } catch (IOException e) {
+                            LOGGER.error("Failed to delete empty output directory {}", dir, e);
+                        }
+                    }
+                } catch (IOException e) {
+                    LOGGER.error("Issue deleting empty output directories", e);
+                }
+            }
         }
     }
 }
