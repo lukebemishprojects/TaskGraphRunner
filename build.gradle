@@ -80,6 +80,15 @@ dependencies {
     modelCompileOnlyApi 'org.jspecify:jspecify:1.0.0'
 }
 
+// This keeps the same versions at runtime and compile time
+var tools = new Properties()
+file("src/main/resources/tools.properties").withInputStream {
+    tools.load(it)
+}
+tools.values().each {
+    dependencies.add('externalTools', it)
+}
+
 compileJava {
     options.compilerArgs += ["-Aproject=${project.group}/${project.name}"]
 }

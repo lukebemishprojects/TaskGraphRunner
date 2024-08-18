@@ -7,6 +7,7 @@ import com.google.gson.reflect.TypeToken;
 import com.google.gson.stream.JsonReader;
 import com.google.gson.stream.JsonToken;
 import com.google.gson.stream.JsonWriter;
+import org.jspecify.annotations.Nullable;
 
 import java.io.IOException;
 import java.util.ArrayList;
@@ -127,10 +128,12 @@ public abstract sealed class Argument {
     public static final class Classpath extends Argument {
         public Input input;
         public boolean file;
+        public @Nullable String prefix;
 
-        public Classpath(Input input, boolean file) {
+        public Classpath(Input input, boolean file, @Nullable String prefix) {
             this.input = input;
             this.file = file;
+            this.prefix = prefix;
         }
 
         private static final class Specialized extends FieldAdapter<Classpath> {
@@ -138,7 +141,8 @@ public abstract sealed class Argument {
             public Function<Values, Classpath> build(Builder<Classpath> builder) {
                 var input = builder.field("input", arg -> arg.input, Input.class);
                 var file = builder.field("file", arg -> arg.file, Boolean.class);
-                return values -> new Classpath(values.get(input), values.get(file));
+                var prefix = builder.field("prefix", arg -> arg.prefix, String.class);
+                return values -> new Classpath(values.get(input), values.get(file), values.get(prefix));
             }
         }
     }

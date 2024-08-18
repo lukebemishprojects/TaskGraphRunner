@@ -127,7 +127,7 @@ public final class NeoFormConversion {
                 case "patch" -> new TaskModel.PatchSources(
                     step.name(),
                     parseStepInput(step, "input"),
-                    new Input.TaskInput(new Output("generated_retrieve_patch", "output"))
+                    new Input.TaskInput(new Output("generated_retrieve_patches", "output"))
                 );
                 default -> {
                     var function = source.functions().get(step.type());
@@ -137,14 +137,14 @@ public final class NeoFormConversion {
                     var tool = new TaskModel.Tool(step.name(), List.of());
 
                     for (var arg : function.jvmArgs()) {
-                        tool.args.add(processArgument(arg, step, listLibrariesName));
+                        tool.args.add(processArgument(arg, step, source, listLibrariesName));
                     }
 
                     tool.args.add(new Argument.ValueInput(new Input.DirectInput(new Value.StringValue("-jar"))));
                     tool.args.add(new Argument.FileInput(new Input.DirectInput(Value.artifact(function.version())), PathSensitivity.NONE));
 
                     for (var arg : function.args()) {
-                        tool.args.add(processArgument(arg, step, listLibrariesName));
+                        tool.args.add(processArgument(arg, step, source, listLibrariesName));
                     }
 
                     yield tool;
@@ -156,23 +156,33 @@ public final class NeoFormConversion {
         return config;
     }
 
-    private static Argument processArgument(String arg, NeoFormStep step, String listLibrariesName) {
+    private static Argument processArgument(String arg, NeoFormStep step, NeoFormConfig fullConfig, String listLibrariesName) {
         if (arg.startsWith("{") && arg.endsWith("}")) {
             var name = arg.substring(1, arg.length() - 1);
-            if ("libraries".equals(name)) {
-                return new Argument.Classpath(
-                    new Input.TaskInput(new Output(listLibrariesName, "output")),
-                    true
-                );
-            }
-            var stepValue = step.values().get(name);
-            if (stepValue != null) {
-                return new Argument.FileInput(parseStepInput(step, name), PathSensitivity.NONE);
-            } else {
-                var input = new Input.TaskInput(new Output("generated_retrieve_" + name, "output"));
-                return new Argument.FileInput(input, PathSensitivity.NONE);
-            }
+            return switch (name) {
+                case "libraries" -> new Argument.Classpath(
+                        new Input.TaskInput(new Output(listLibrariesName, "output")),
+                        true,
+                    "-e="
+                    );
+                case "version" -> new Argument.ValueInput(new Input.DirectInput(new Value.StringValue(fullConfig.version())));
+                // Special-case the output extension for mergeMappings here... NeoForm's format is silly
+                case "output" -> new Argument.FileOutput("output", step.type().equals("mergeMappings") ? "tsrg" : "jar");
+                default -> {
+                    var stepValue = step.values().get(name);
+                    if (stepValue != null) {
+                        yield new Argument.FileInput(parseStepInput(step, name), PathSensitivity.NONE);
+                    } else {
+                        var input = new Input.TaskInput(new Output("generated_retrieve_" + name, "output"));
+                        yield new Argument.FileInput(input, PathSensitivity.NONE);
+                    }
+                }
+            };
         } else {
+            var toolArtifactId = fullConfig.functions().get(step.type()).version();
+            if (toolArtifactId.startsWith("org.vineflower:vineflower:")) {
+                arg = arg.replace("TRACE", "WARN");
+            }
             return new Argument.ValueInput(new Input.DirectInput(new Value.StringValue(arg)));
         }
     }

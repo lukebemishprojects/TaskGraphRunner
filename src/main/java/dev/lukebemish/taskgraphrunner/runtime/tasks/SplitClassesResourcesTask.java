@@ -41,12 +41,12 @@ public class SplitClassesResourcesTask extends Task {
 
     @Override
     public Map<String, String> outputTypes() {
-        return Map.of("classes", "jar", "resources", "jar");
+        return Map.of("output", "jar", "resources", "jar");
     }
 
     @Override
     protected void run(Context context) {
-        var classesJar = context.taskOutputPath(name(), "classes");
+        var classesJar = context.taskOutputPath(name(), "output");
         var resourcesJar = context.taskOutputPath(name(), "resources");
 
         var deny = Pattern.compile((String) excludePattern.value().value()).asMatchPredicate();

@@ -56,16 +56,18 @@ public class ListClasspathTask extends Task {
                 for (var element : libraries) {
                     var library = JsonUtils.GSON.fromJson(element, Library.class);
                     boolean allowed = true;
-                    for (var rule : library.rules()) {
-                        if (rule.action() == Rule.Action.ALLOW) {
-                            if (!rule.matches()) {
-                                allowed = false;
-                                break;
-                            }
-                        } else {
-                            if (rule.matches()) {
-                                allowed = false;
-                                break;
+                    if (library.rules() != null) {
+                        for (var rule : library.rules()) {
+                            if (rule.action() == Rule.Action.ALLOW) {
+                                if (!rule.matches()) {
+                                    allowed = false;
+                                    break;
+                                }
+                            } else {
+                                if (rule.matches()) {
+                                    allowed = false;
+                                    break;
+                                }
                             }
                         }
                     }

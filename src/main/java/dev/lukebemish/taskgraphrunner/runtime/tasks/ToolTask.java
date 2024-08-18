@@ -10,13 +10,12 @@ import dev.lukebemish.taskgraphrunner.model.Value.NumberValue;
 import dev.lukebemish.taskgraphrunner.model.Value.StringValue;
 import dev.lukebemish.taskgraphrunner.model.WorkItem;
 import dev.lukebemish.taskgraphrunner.runtime.Context;
-import dev.lukebemish.taskgraphrunner.runtime.Task;
 import dev.lukebemish.taskgraphrunner.runtime.TaskInput;
+import org.jspecify.annotations.Nullable;
 
 import java.io.File;
 import java.io.IOException;
 import java.io.UncheckedIOException;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -27,7 +26,7 @@ import java.util.function.Function;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
-public class ToolTask extends Task {
+public class ToolTask extends JavaTask {
     private final List<Arg> args;
     private final List<TaskInput> inputs;
     private final Map<String, String> outputExtensions;
@@ -48,7 +47,7 @@ public class ToolTask extends Task {
             var arg = sourceArgs.get(i);
             var name = "arg" + i;
             args.add(switch (arg) {
-                case Argument.Classpath classpath -> new Arg.Classpath(TaskInput.files(name+"classpath", classpath.input, workItem, context, PathSensitivity.NONE), classpath.file);
+                case Argument.Classpath classpath -> new Arg.Classpath(TaskInput.files(name+"classpath", classpath.input, workItem, context, PathSensitivity.NONE), classpath.file, classpath.prefix);
                 case Argument.FileInput fileInput -> new Arg.InputFile(TaskInput.file(name+"file", fileInput.input, workItem, context, fileInput.pathSensitivity));
                 case Argument.ValueInput valueInput -> new Arg.Value(TaskInput.value(name+"value", valueInput.input, workItem));
                 case Argument.Zip zip -> {
@@ -82,61 +81,10 @@ public class ToolTask extends Task {
     }
 
     @Override
-    protected void run(Context context) {
-        var javaExecutablePath = ProcessHandle.current()
-            .info()
-            .command()
-            .orElseThrow();
-
-        var command = new ArrayList<String>();
-
-        var stateName = context.taskStatePath(name()).getFileName().toString();
-        var taskName = stateName.substring(0, stateName.lastIndexOf('.'));
-        var workingDirectory = context.taskDirectory(name()).resolve(taskName);
-        try {
-            Files.createDirectories(workingDirectory);
-        } catch (IOException e) {
-            throw new UncheckedIOException(e);
-        }
-
+    protected void collectArguments(ArrayList<String> command, Context context, Path workingDirectory) {
         for (int i = 0; i < args.size(); i++) {
             var arg = args.get(i);
             command.addAll(arg.resolve(workingDirectory, name(), context, i));
-        }
-
-        var logFile = workingDirectory.resolve("log.txt");
-        var argsFile = workingDirectory.resolve("args.txt");
-
-        try {
-            try (var writer = Files.newBufferedWriter(logFile, StandardCharsets.UTF_8)) {
-                writer.append("-".repeat(80)).append("\n\n");
-                writer.append("Command-Line:\n");
-                writer.append(" - ").append(javaExecutablePath).append("\n");
-                for (String s : command) {
-                    writer.append(" - ").append(s).append("\n");
-                }
-                writer.append("-".repeat(80)).append("\n\n");
-            }
-
-            try (var writer = Files.newBufferedWriter(argsFile, StandardCharsets.UTF_8)) {
-                for (var argument : command) {
-                    writer.write(argument+System.lineSeparator());
-                }
-            }
-
-            var process = new ProcessBuilder()
-                .directory(workingDirectory.toFile())
-                .command(List.of(javaExecutablePath, "@args.txt"))
-                .redirectErrorStream(true)
-                .redirectOutput(ProcessBuilder.Redirect.appendTo(logFile.toFile()))
-                .start();
-
-            var exitCode = process.waitFor();
-            if (exitCode != 0) {
-                throw new RuntimeException("Tool failed with exit code " + exitCode + ", see log file at "+logFile.toAbsolutePath()+" for details");
-            }
-        } catch (IOException | InterruptedException e) {
-            throw new RuntimeException("Failed to execute tool", e);
         }
     }
 
@@ -173,11 +121,11 @@ public class ToolTask extends Task {
 
             @Override
             public List<String> resolve(Path workingDirectory, String taskName, Context context, int argCount) {
-                return List.of(shortPath(workingDirectory, input.path(context)));
+                return List.of(input.path(context).toAbsolutePath().toString());
             }
         }
 
-        record Classpath(TaskInput.FileListInput input, boolean file) implements Arg {
+        record Classpath(TaskInput.FileListInput input, boolean file, @Nullable String prefix) implements Arg {
             @Override
             public Stream<TaskInput> inputs() {
                 return Stream.of(input);
@@ -187,15 +135,15 @@ public class ToolTask extends Task {
             public List<String> resolve(Path workingDirectory, String taskName, Context context, int argCount) {
                 if (file) {
                     Path filePath = workingDirectory.resolve("args." + argCount + ".txt");
-                    var content = input.paths(context).stream().map(path -> shortPath(workingDirectory, path)).collect(Collectors.joining(System.lineSeparator())) + System.lineSeparator();
+                    var content = input.paths(context).stream().map(path -> prefix+path.toAbsolutePath().toString()).collect(Collectors.joining(System.lineSeparator())) + System.lineSeparator();
                     try (var writer = Files.newBufferedWriter(filePath)) {
                         writer.write(content);
                     } catch (IOException e) {
                         throw new UncheckedIOException(e);
                     }
-                    return List.of(shortPath(workingDirectory, filePath));
+                    return List.of(filePath.toAbsolutePath().toString());
                 } else {
-                    return List.of(input.paths(context).stream().map(path -> shortPath(workingDirectory, path)).collect(Collectors.joining(File.pathSeparator)));
+                    return List.of(input.paths(context).stream().map(path -> path.toAbsolutePath().toString()).collect(Collectors.joining(File.pathSeparator)));
                 }
             }
         }
@@ -222,7 +170,7 @@ public class ToolTask extends Task {
 
                 for (int i = 0; i < length; i++) {
                     for (var files : lists) {
-                        paths.add(shortPath(workingDirectory, files.get(i)));
+                        paths.add(files.get(i).toAbsolutePath().toString());
                     }
                 }
 
@@ -238,14 +186,8 @@ public class ToolTask extends Task {
 
             @Override
             public List<String> resolve(Path workingDirectory, String taskName, Context context, int argCount) {
-                return List.of(shortPath(workingDirectory, context.taskOutputPath(taskName, outputName)));
+                return List.of(context.taskOutputPath(taskName, outputName).toAbsolutePath().toString());
             }
-        }
-
-        private static String shortPath(Path workingDirectory, Path path) {
-            var relative = workingDirectory.relativize(path).toString();
-            var absolute = path.toAbsolutePath().toString();
-            return absolute.length() > relative.length() ? relative : absolute;
         }
 
         Stream<TaskInput> inputs();

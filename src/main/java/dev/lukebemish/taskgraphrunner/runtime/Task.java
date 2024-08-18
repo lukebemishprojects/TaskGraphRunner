@@ -2,7 +2,6 @@ package dev.lukebemish.taskgraphrunner.runtime;
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
-import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonPrimitive;
@@ -12,7 +11,10 @@ import dev.lukebemish.taskgraphrunner.runtime.tasks.DownloadDistributionTask;
 import dev.lukebemish.taskgraphrunner.runtime.tasks.DownloadJsonTask;
 import dev.lukebemish.taskgraphrunner.runtime.tasks.DownloadManifestTask;
 import dev.lukebemish.taskgraphrunner.runtime.tasks.DownloadMappingsTask;
+import dev.lukebemish.taskgraphrunner.runtime.tasks.InjectSourcesTask;
 import dev.lukebemish.taskgraphrunner.runtime.tasks.ListClasspathTask;
+import dev.lukebemish.taskgraphrunner.runtime.tasks.PatchSourcesTask;
+import dev.lukebemish.taskgraphrunner.runtime.tasks.RetrieveDataTask;
 import dev.lukebemish.taskgraphrunner.runtime.tasks.SplitClassesResourcesTask;
 import dev.lukebemish.taskgraphrunner.runtime.tasks.ToolTask;
 import dev.lukebemish.taskgraphrunner.runtime.util.HashUtils;
@@ -233,10 +235,9 @@ public abstract class Task implements RecordedInput {
         JsonObject state = new JsonObject();
         state.addProperty("name", name());
         state.addProperty("type", getClass().getName());
-        JsonArray inputs = new JsonArray();
+        JsonObject inputs = new JsonObject();
         for (TaskInput input : inputs()) {
             JsonObject inputObject = new JsonObject();
-            inputObject.addProperty("name", input.name());
             inputObject.add("value", input.recordedValue(context));
             try {
                 MessageDigest digest = MessageDigest.getInstance("MD5");
@@ -246,9 +247,14 @@ public abstract class Task implements RecordedInput {
             } catch (NoSuchAlgorithmException e) {
                 throw new RuntimeException(e);
             }
-            inputs.add(inputObject);
+            inputs.add(input.name(), inputObject);
         }
         state.add("inputs", inputs);
+        JsonObject outputs = new JsonObject();
+        for (var output : outputTypes().entrySet()) {
+            outputs.addProperty(output.getKey(), output.getValue());
+        }
+        state.add("outputs", outputs);
         return state;
     }
 
@@ -265,7 +271,9 @@ public abstract class Task implements RecordedInput {
             case TaskModel.SplitClassesResources splitClassesResources -> new SplitClassesResourcesTask(splitClassesResources, workItem, context);
             case TaskModel.Tool tool -> new ToolTask(tool, workItem, context);
             case TaskModel.ListClasspath listClasspath -> new ListClasspathTask(listClasspath, workItem, context);
-            default -> throw new UnsupportedOperationException("Not yet implemented");
+            case TaskModel.InjectSources injectSources -> new InjectSourcesTask(injectSources, workItem, context);
+            case TaskModel.PatchSources patchSources -> new PatchSourcesTask(patchSources, workItem, context);
+            case TaskModel.RetrieveData retrieveData -> new RetrieveDataTask(retrieveData, workItem, context);
         };
     }
 
