@@ -39,6 +39,7 @@ public final class Config {
                 GSON.toJson(entry.getValue(), Value.class, out);
             }
             out.endObject();
+            out.endObject();
         }
 
         @Override

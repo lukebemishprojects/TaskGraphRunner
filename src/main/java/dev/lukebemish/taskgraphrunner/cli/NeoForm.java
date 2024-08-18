@@ -57,6 +57,7 @@ public class NeoForm implements Runnable {
 
             try (var writer = Files.newBufferedWriter(target)) {
                 new GsonBuilder().setPrettyPrinting().create().toJson(config, writer);
+                writer.write("\n"); // NOT the system newline -- Gson always uses \n (see FormattingStyle)
             }
         } catch (IOException e) {
             throw new UncheckedIOException(e);
