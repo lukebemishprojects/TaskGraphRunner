@@ -27,7 +27,7 @@ public class Clean implements Runnable {
     @CommandLine.Option(names = "--output-duration", description = "Time to keep task outputs for, in days.", arity = "*")
     int outputDuration = 30;
 
-    public Clean(Main main) {
+    Clean(Main main) {
         this.main = main;
     }
 

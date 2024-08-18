@@ -50,9 +50,9 @@ abstract class FieldAdapter<O> extends GsonAdapter<O> {
             public void write(JsonWriter out, O value) throws IOException {
                 out.beginObject();
                 for (var entry : keys.entrySet()) {
-                    out.name(entry.getKey());
                     var fieldValue = getters.get(entry.getValue()).apply(value);
                     if (fieldValue != null) {
+                        out.name(entry.getKey());
                         ((TypeAdapter) GSON.getAdapter(TypeToken.get(types.get(entry.getValue())))).write(out, fieldValue);
                     }
                 }

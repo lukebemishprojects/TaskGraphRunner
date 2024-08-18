@@ -8,8 +8,9 @@ import dev.lukebemish.taskgraphrunner.model.WorkItem;
 import dev.lukebemish.taskgraphrunner.runtime.Context;
 import dev.lukebemish.taskgraphrunner.runtime.Task;
 import dev.lukebemish.taskgraphrunner.runtime.TaskInput;
+import dev.lukebemish.taskgraphrunner.runtime.manifest.version.Library;
+import dev.lukebemish.taskgraphrunner.runtime.manifest.version.Rule;
 import dev.lukebemish.taskgraphrunner.runtime.util.JsonUtils;
-import dev.lukebemish.taskgraphrunner.runtime.util.OsUtils;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
@@ -53,51 +54,25 @@ public class ListClasspathTask extends Task {
             List<String> artifacts = new ArrayList<>();
             if (libraries != null) {
                 for (var element : libraries) {
-                    var library = element.getAsJsonObject();
-                    var name = library.get("name").getAsString();
-                    var rules = library.getAsJsonArray("rules");
-                    boolean[] allowed = new boolean[] {true};
-                    if (rules != null) {
-                        for (var ruleElement : rules) {
-                            var rule = ruleElement.getAsJsonObject();
-                            var action = rule.get("action").getAsString();
-                            boolean[] passes = new boolean[] {true};
-                            var os = rule.getAsJsonObject("os");
-                            if (os != null) {
-                                var osName = os.getAsJsonPrimitive("name").getAsString();
-                                switch (osName) {
-                                    case "osx" -> {
-                                        if (!OsUtils.isMac()) {
-                                            passes[0] = false;
-                                        }
-                                    }
-                                    case "windows" -> {
-                                        if (!OsUtils.isWindows()) {
-                                            passes[0] = false;
-                                        }
-                                    }
-                                    case "linux" -> {
-                                        if (!OsUtils.isLinux()) {
-                                            passes[0] = false;
-                                        }
-                                    }
-                                }
+                    var library = JsonUtils.GSON.fromJson(element, Library.class);
+                    boolean allowed = true;
+                    for (var rule : library.rules()) {
+                        if (rule.action() == Rule.Action.ALLOW) {
+                            if (!rule.matches()) {
+                                allowed = false;
+                                break;
                             }
-                            if (action.equals("allow")) {
-                                if (!passes[0]) {
-                                    allowed[0] = false;
-                                }
-                            } else if (action.equals("disallow")) {
-                                if (passes[0]) {
-                                    allowed[0] = false;
-                                }
+                        } else {
+                            if (rule.matches()) {
+                                allowed = false;
+                                break;
                             }
                         }
                     }
-                    if (!allowed[0]) {
+                    if (!allowed) {
                         continue;
                     }
-                    artifacts.add("artifact:"+name);
+                    artifacts.add("artifact:"+library.name());
                 }
             }
             if (!(additionalLibraries.value() instanceof Value.ListValue additionalLibrariesList)) {

@@ -14,7 +14,7 @@ public final class WorkItem {
     public final Map<Output, Path> results = new HashMap<>();
     public final Map<String, Value> parameters = new HashMap<>();
 
-    public static final class Adapter extends GsonAdapter<WorkItem> {
+    static final class Adapter extends GsonAdapter<WorkItem> {
         @Override
         public void write(JsonWriter out, WorkItem value) throws IOException {
             out.beginObject();

@@ -8,7 +8,7 @@ import java.io.IOException;
 
 @JsonAdapter(Output.Adapter.class)
 public record Output(String taskName, String name) {
-    public static final class Adapter extends GsonAdapter<Output> {
+    static final class Adapter extends GsonAdapter<Output> {
         @Override
         public void write(JsonWriter out, Output value) throws IOException {
             out.value(value.taskName() + "." + value.name());

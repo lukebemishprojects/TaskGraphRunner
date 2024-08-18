@@ -13,7 +13,7 @@ public enum PathSensitivity {
     NONE,
     NAME_ONLY;
 
-    public static final class Adapter extends GsonAdapter<PathSensitivity> {
+    static final class Adapter extends GsonAdapter<PathSensitivity> {
         @Override
         public void write(JsonWriter out, PathSensitivity value) throws IOException {
             out.value(value.name().toLowerCase(Locale.ROOT));

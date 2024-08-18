@@ -16,7 +16,7 @@ public final class Config {
     public final List<WorkItem> workItems = new ArrayList<>();
     public final Map<String, Value> parameters = new HashMap<>();
 
-    public static final class Adapter extends GsonAdapter<Config> {
+    static final class Adapter extends GsonAdapter<Config> {
         @Override
         public void write(JsonWriter out, Config value) throws IOException {
             out.beginObject();

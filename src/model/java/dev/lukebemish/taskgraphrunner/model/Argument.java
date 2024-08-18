@@ -14,9 +14,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
 
-@JsonAdapter(Argument.Adapter.class)
-public sealed interface Argument {
-    final class Adapter extends GsonAdapter<Argument> {
+@JsonAdapter(Argument.ArgumentAdapter.class)
+public abstract sealed class Argument {
+    static final class ArgumentAdapter extends GsonAdapter<Argument> {
         private static final Map<String, TypeAdapter<? extends Argument>> TASK_TYPES = Map.of(
             "value", new ValueInput.Specialized(),
             "fileInput", new FileInput.Specialized(),
@@ -35,9 +35,14 @@ public sealed interface Argument {
         @SuppressWarnings({"rawtypes", "unchecked"})
         @Override
         public void write(JsonWriter out, Argument value) throws IOException {
+            if (value instanceof ValueInput valueInput && (!(valueInput.input instanceof Input.DirectInput directInput) || directInput.value() instanceof Value.StringValue)) {
+                GSON.getAdapter(Input.class).write(out, valueInput.input);
+                return;
+            }
             out.beginObject();
-            out.name("type").value(TASK_TYPE_NAMES.get(value.getClass()));
-            TypeAdapter adapter = GSON.getAdapter(value.getClass());
+            var type = TASK_TYPE_NAMES.get(value.getClass());
+            out.name("type").value(type);
+            TypeAdapter adapter = TASK_TYPES.get(type);
             for (var entry : adapter.toJsonTree(value).getAsJsonObject().entrySet()) {
                 out.name(entry.getKey());
                 GSON.toJson(entry.getValue(), out);
@@ -61,8 +66,8 @@ public sealed interface Argument {
         }
     }
 
-    @JsonAdapter(Adapter.class)
-    final class ValueInput implements Argument {
+    @JsonAdapter(ArgumentAdapter.class)
+    public static final class ValueInput extends Argument {
         public Input input;
 
         public ValueInput(Input input) {
@@ -78,8 +83,8 @@ public sealed interface Argument {
         }
     }
 
-    @JsonAdapter(Adapter.class)
-    final class FileInput implements Argument {
+    @JsonAdapter(ArgumentAdapter.class)
+    public static final class FileInput extends Argument {
         public Input input;
         public PathSensitivity pathSensitivity;
 
@@ -98,8 +103,8 @@ public sealed interface Argument {
         }
     }
 
-    @JsonAdapter(Adapter.class)
-    final class FileOutput implements Argument {
+    @JsonAdapter(ArgumentAdapter.class)
+    public static final class FileOutput extends Argument {
         public String name;
         public String extension;
 
@@ -118,8 +123,8 @@ public sealed interface Argument {
         }
     }
 
-    @JsonAdapter(Adapter.class)
-    final class Classpath implements Argument {
+    @JsonAdapter(ArgumentAdapter.class)
+    public static final class Classpath extends Argument {
         public Input input;
         public boolean file;
 
@@ -138,8 +143,8 @@ public sealed interface Argument {
         }
     }
 
-    @JsonAdapter(Adapter.class)
-    final class Zip implements Argument {
+    @JsonAdapter(ArgumentAdapter.class)
+    public static final class Zip extends Argument {
         public final List<Input> inputs = new ArrayList<>();
         public PathSensitivity pathSensitivity;
 

@@ -26,7 +26,7 @@ public sealed abstract class TaskModel {
         return name;
     }
 
-    public static final class Adapter extends GsonAdapter<TaskModel> {
+    static final class Adapter extends GsonAdapter<TaskModel> {
         private static final Map<String, TypeAdapter<? extends TaskModel>> TASK_TYPES = Map.of(
                 "downloadManifest", new DownloadManifest.Specialized(),
                 "downloadJson", new DownloadJson.Specialized(),
@@ -56,8 +56,9 @@ public sealed abstract class TaskModel {
         @Override
         public void write(JsonWriter out, TaskModel value) throws IOException {
             out.beginObject();
-            out.name("type").value(TASK_TYPE_NAMES.get(value.getClass()));
-            TypeAdapter adapter = GSON.getAdapter(value.getClass());
+            var type = TASK_TYPE_NAMES.get(value.getClass());
+            out.name("type").value(type);
+            TypeAdapter adapter = TASK_TYPES.get(type);
             for (var entry : adapter.toJsonTree(value).getAsJsonObject().entrySet()) {
                 out.name(entry.getKey());
                 GSON.toJson(entry.getValue(), out);
@@ -66,7 +67,7 @@ public sealed abstract class TaskModel {
         }
 
         @Override
-        public TaskModel read(JsonReader in) throws IOException {
+        public TaskModel read(JsonReader in) {
             JsonObject json = GSON.fromJson(in, JsonObject.class);
             var type = json.get("type").getAsString();
             var taskType = TASK_TYPES.get(type);

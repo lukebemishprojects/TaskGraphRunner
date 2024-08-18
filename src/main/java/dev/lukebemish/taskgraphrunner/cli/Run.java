@@ -25,7 +25,7 @@ public class Run implements Runnable {
 
     private final Main main;
 
-    public Run(Main main) {
+    Run(Main main) {
         this.main = main;
     }
 

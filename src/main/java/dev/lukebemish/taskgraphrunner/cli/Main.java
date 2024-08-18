@@ -16,6 +16,7 @@ public class Main {
         new CommandLine(main)
             .addSubcommand("run", new Run(main))
             .addSubcommand("clean", new Clean(main))
+            .addSubcommand("neoform", new NeoForm(main))
             .execute(args);
     }
 
