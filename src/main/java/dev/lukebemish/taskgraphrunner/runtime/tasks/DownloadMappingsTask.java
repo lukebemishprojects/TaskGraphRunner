@@ -24,8 +24,8 @@ public class DownloadMappingsTask extends Task {
 
     public DownloadMappingsTask(TaskModel.DownloadMappings model, WorkItem workItem, Context context) {
         super(model.name());
-        this.distribution = TaskInput.value("distribution", model.distribution(), workItem);
-        this.versionJson = TaskInput.file("versionJson", model.versionJson(), workItem, context, PathSensitivity.NONE);
+        this.distribution = TaskInput.value("distribution", model.distribution, workItem);
+        this.versionJson = TaskInput.file("versionJson", model.versionJson, workItem, context, PathSensitivity.NONE);
     }
 
     @Override
@@ -40,7 +40,7 @@ public class DownloadMappingsTask extends Task {
 
     @Override
     protected void run(Context context) {
-        var distribution = Distribution.fromString((String) this.distribution.value());
+        var distribution = Distribution.fromString((String) this.distribution.value().value());
         if (distribution == Distribution.JOINED) {
             throw new IllegalArgumentException("Distribution JOINED cannot be downloaded");
         }

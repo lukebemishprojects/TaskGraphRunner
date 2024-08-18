@@ -3,11 +3,13 @@ package dev.lukebemish.taskgraphrunner.runtime;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
-import com.google.gson.JsonPrimitive;
 import dev.lukebemish.taskgraphrunner.model.Input;
 import dev.lukebemish.taskgraphrunner.model.PathSensitivity;
+import dev.lukebemish.taskgraphrunner.model.Value;
 import dev.lukebemish.taskgraphrunner.model.WorkItem;
 import dev.lukebemish.taskgraphrunner.runtime.util.HashUtils;
+import dev.lukebemish.taskgraphrunner.runtime.util.JsonUtils;
+import org.jspecify.annotations.Nullable;
 
 import java.io.File;
 import java.io.IOException;
@@ -18,7 +20,6 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Objects;
 import java.util.stream.Collectors;
 
 public sealed interface TaskInput extends RecordedInput {
@@ -34,53 +35,60 @@ public sealed interface TaskInput extends RecordedInput {
 
     sealed interface FileListInput extends TaskInput {
         List<Path> paths(Context context);
+
         default String classpath(Context context) {
             return paths(context).stream().map(p -> p.toAbsolutePath().toString()).collect(Collectors.joining(File.pathSeparator));
         }
     }
 
-    record ValueInput(String name, Object value) implements TaskInput {
+    record ValueInput(String name, Value value) implements TaskInput {
 
         @Override
         public void hashReference(ByteConsumer digest, Context context) {
             switch (value) {
-                case Double d -> {
-                    ByteBuffer buffer = ByteBuffer.allocate(Double.BYTES);
-                    buffer.putDouble(d);
-                    digest.update(buffer);
+                case Value.BooleanValue bool -> digest.update(bool.value() ? (byte) 1 : (byte) 0);
+                case Value.NumberValue numberValue -> {
+                    switch (numberValue.value()) {
+                        case Double d -> {
+                            ByteBuffer buffer = ByteBuffer.allocate(Double.BYTES);
+                            buffer.putDouble(d);
+                            digest.update(buffer);
+                        }
+                        case Float f -> {
+                            ByteBuffer buffer = ByteBuffer.allocate(Float.BYTES);
+                            buffer.putFloat(f);
+                            digest.update(buffer);
+                        }
+                        case Long l -> {
+                            ByteBuffer buffer = ByteBuffer.allocate(Long.BYTES);
+                            buffer.putLong(l);
+                            digest.update(buffer);
+                        }
+                        case Integer i -> {
+                            ByteBuffer buffer = ByteBuffer.allocate(Integer.BYTES);
+                            buffer.putInt(i);
+                            digest.update(buffer);
+                        }
+                        case Short s -> {
+                            ByteBuffer buffer = ByteBuffer.allocate(Short.BYTES);
+                            buffer.putShort(s);
+                            digest.update(buffer);
+                        }
+                        case Byte b -> digest.update(b);
+                        default -> throw new IllegalArgumentException("Unsupported value type: "+value.getClass());
+                    }
                 }
-                case Float f -> {
-                    ByteBuffer buffer = ByteBuffer.allocate(Float.BYTES);
-                    buffer.putFloat(f);
-                    digest.update(buffer);
+                case Value.StringValue stringValue -> digest.update(stringValue.value().getBytes(StandardCharsets.UTF_8));
+                case Value.MapValue mapValue -> {
+                    for (var entry : mapValue.value().entrySet()) {
+                        digest.update(entry.getKey().getBytes(StandardCharsets.UTF_8));
+                        digest.update(entry.getValue().toString().getBytes(StandardCharsets.UTF_8));
+                    }
                 }
-                case Long l -> {
-                    ByteBuffer buffer = ByteBuffer.allocate(Long.BYTES);
-                    buffer.putLong(l);
-                    digest.update(buffer);
-                }
-                case Integer i -> {
-                    ByteBuffer buffer = ByteBuffer.allocate(Integer.BYTES);
-                    buffer.putInt(i);
-                    digest.update(buffer);
-                }
-                case Short s -> {
-                    ByteBuffer buffer = ByteBuffer.allocate(Short.BYTES);
-                    buffer.putShort(s);
-                    digest.update(buffer);
-                }
-                case Byte b -> digest.update(b);
-                case Boolean bool -> digest.update(bool ? (byte) 1 : (byte) 0);
-                case Number number -> {
-                    ByteBuffer buffer = ByteBuffer.allocate(Integer.BYTES);
-                    buffer.putInt(Objects.hashCode(number));
-                    digest.update(buffer);
-                }
-                case String string -> digest.update(string.getBytes(StandardCharsets.UTF_8));
-                case Character character -> {
-                    ByteBuffer buffer = ByteBuffer.allocate(Character.BYTES);
-                    buffer.putChar(character);
-                    digest.update(buffer);
+                case Value.ListValue listValue -> {
+                    for (var element : listValue.value()) {
+                        digest.update(element.toString().getBytes(StandardCharsets.UTF_8));
+                    }
                 }
                 default -> throw new IllegalArgumentException("Unsupported value type: "+value.getClass());
             }
@@ -88,13 +96,7 @@ public sealed interface TaskInput extends RecordedInput {
 
         @Override
         public JsonElement recordedValue(Context context) {
-            return switch (value) {
-                case Boolean bool -> new JsonPrimitive(bool);
-                case Number number -> new JsonPrimitive(number);
-                case String string -> new JsonPrimitive(string);
-                case Character character -> new JsonPrimitive(character);
-                default -> throw new IllegalArgumentException("Unsupported value type: "+value.getClass());
-            };
+            return JsonUtils.GSON.getAdapter(Value.class).toJsonTree(value);
         }
     }
 
@@ -123,7 +125,11 @@ public sealed interface TaskInput extends RecordedInput {
         public JsonElement recordedValue(Context context) {
             JsonObject object = new JsonObject();
             object.addProperty("type", "file");
-            object.addProperty("path", path.toString());
+            switch (pathSensitivity) {
+                case ABSOLUTE -> object.addProperty("path", path.toAbsolutePath().toString());
+                case NONE -> {}
+                case NAME_ONLY -> object.addProperty("path", path.getFileName().toString());
+            }
             object.addProperty("sensitivity", pathSensitivity.name());
             return object;
         }
@@ -168,36 +174,6 @@ public sealed interface TaskInput extends RecordedInput {
         @Override
         public Path path(Context context) {
             return context.taskOutputPath(output.taskName(), output.name());
-        }
-    }
-
-    record ValueListInput(String name, List<ValueInput> inputs) implements TaskInput {
-
-        @Override
-        public void hashReference(ByteConsumer digest, Context context) {
-            for (ValueInput input : inputs) {
-                input.hashReference(digest, context);
-            }
-        }
-
-        @Override
-        public void hashContents(ByteConsumer digest, Context context) {
-            for (ValueInput input : inputs) {
-                input.hashContents(digest, context);
-            }
-        }
-
-        @Override
-        public JsonElement recordedValue(Context context) {
-            JsonArray array = new JsonArray();
-            for (ValueInput input : inputs) {
-                array.add(input.recordedValue(context));
-            }
-            return array;
-        }
-
-        List<Object> values() {
-            return inputs.stream().map(input -> input.value).toList();
         }
     }
 
@@ -292,126 +268,89 @@ public sealed interface TaskInput extends RecordedInput {
         return value(name, modelInput, workItem, null);
     }
 
-    static ValueInput value(String name, Input modelInput, WorkItem workItem, Object defaultValue) {
+    static ValueInput value(String name, Input modelInput, WorkItem workItem, Value defaultValue) {
         return switch (modelInput) {
             case Input.ParameterInput parameterInput -> {
-                JsonElement json = workItem.parameters().get(parameterInput.parameter());
-                if (json == null && defaultValue != null) {
+                var value = workItem.parameters.get(parameterInput.parameter());
+                if (value == null) {
+                    if (defaultValue == null) {
+                        throw new IllegalArgumentException("No such parameter `"+ parameterInput.parameter()+"`");
+                    }
                     yield new ValueInput(name, defaultValue);
                 }
-                if (json == null || !json.isJsonPrimitive()) {
-                    throw new IllegalArgumentException("No such primitive parameter `"+parameterInput.parameter()+"`");
-                }
-                yield new ValueInput(name, unboxPrimitive(json.getAsJsonPrimitive()));
+                yield new ValueInput(name, value);
             }
             case Input.TaskInput ignored -> throw new IllegalArgumentException("Cannot convert task input to value");
             case Input.DirectInput directInput -> new ValueInput(name, directInput.value());
         };
     }
 
-    private static Object unboxPrimitive(JsonPrimitive primitive) {
-        Object value;
-        if (primitive.isBoolean()) {
-            value = primitive.getAsBoolean();
-        } else if (primitive.isNumber()) {
-            value = primitive.getAsNumber();
-        } else if (primitive.isString()) {
-            value = primitive.getAsString();
-        } else {
-            throw new IllegalArgumentException("Unsupported primitive type: "+ primitive);
-        }
-        return value;
-    }
-
-    static ValueListInput values(String name, Input modelInput, WorkItem workItem) {
-        return values(name, modelInput, workItem, null);
-    }
-
-    static ValueListInput values(String name, Input modelInput, WorkItem workItem, List<Object> defaults) {
-        return switch (modelInput) {
-            case Input.ParameterInput parameterInput -> {
-                JsonElement json = workItem.parameters().get(parameterInput.parameter());
-                if (json == null && defaults != null) {
-                    List<ValueInput> inputs = new ArrayList<>(defaults.size());
-                    for (int i = 0; i < defaults.size(); i++) {
-                        inputs.add(new ValueInput(name+"_"+i, defaults.get(i)));
-                    }
-                    yield new ValueListInput(name, inputs);
-                }
-                if (json == null || !json.isJsonArray()) {
-                    throw new IllegalArgumentException("No such array parameter `"+parameterInput.parameter()+"`");
-                }
-                JsonArray array = json.getAsJsonArray();
-                List<ValueInput> inputs = new ArrayList<>(array.size());
-                for (int i = 0; i < array.size(); i++) {
-                    var value = array.get(i);
-                    if (!value.isJsonPrimitive()) {
-                        throw new IllegalArgumentException("Array parameter `"+parameterInput.parameter()+"` contains non-primitive value at index "+i);
-                    }
-                    inputs.add(new ValueInput(name+"_"+i, unboxPrimitive(value.getAsJsonPrimitive())));
-                }
-                yield new ValueListInput(name, inputs);
-            }
-            case Input.TaskInput ignored -> throw new IllegalArgumentException("Cannot convert task input to value list");
-            case Input.DirectInput ignored -> throw new IllegalArgumentException("Cannot convert direct input to value list");
-        };
-    }
-
     static HasFileInput file(String name, Input modelInput, WorkItem workItem, Context context, PathSensitivity pathSensitivity) {
         return switch (modelInput) {
             case Input.ParameterInput parameterInput -> {
-                JsonElement json = workItem.parameters().get(parameterInput.parameter());
-                if (json == null || !json.isJsonPrimitive()) {
-                    throw new IllegalArgumentException("No such primitive parameter `"+parameterInput.parameter()+"`");
+                var value = workItem.parameters.get(parameterInput.parameter());
+                if (!(value instanceof Value.StringValue stringValue)) {
+                    throw new IllegalArgumentException("Parameter `"+ parameterInput.parameter()+"` is not a string");
                 }
-                if (!json.getAsJsonPrimitive().isString()) {
-                    throw new IllegalArgumentException("Parameter `"+parameterInput.parameter()+"` is not a string");
-                }
-                yield new FileInput(name, pathNotation(context, json.getAsJsonPrimitive().getAsString()), pathSensitivity);
+                yield new FileInput(name, pathNotation(context, stringValue.value()), pathSensitivity);
             }
             case Input.TaskInput taskInput -> {
                 if (pathSensitivity != PathSensitivity.NONE) {
                     throw new IllegalArgumentException("Cannot use path sensitivity with task input");
                 }
-                yield new TaskOutputInput(name, new TaskOutput(taskInput.task(), taskInput.output()));
+                yield new TaskOutputInput(name, new TaskOutput(taskInput.output().taskName(), taskInput.output().name()));
             }
-            case Input.DirectInput directInput -> new FileInput(name, pathNotation(context, directInput.value()), pathSensitivity);
+            case Input.DirectInput directInput -> {
+                if (!(directInput.value() instanceof Value.StringValue stringValue)) {
+                    throw new IllegalArgumentException("Value is not a string");
+                }
+                yield new FileInput(name, pathNotation(context, stringValue.value()), pathSensitivity);
+            }
         };
     }
 
     static FileListInput files(String name, Input modelInput, WorkItem workItem, Context context, PathSensitivity pathSensitivity) {
         return switch (modelInput) {
             case Input.ParameterInput parameterInput -> {
-                JsonElement json = workItem.parameters().get(parameterInput.parameter());
-                if (json != null && json.isJsonPrimitive()) {
-                    if (!json.getAsJsonPrimitive().isString()) {
-                        throw new IllegalArgumentException("Parameter `"+parameterInput.parameter()+"` is not a string");
-                    }
-                    yield new LibraryListFileListInput(name, new FileInput(name, pathNotation(context, json.getAsJsonPrimitive().getAsString()), pathSensitivity));
-                }
-                if (json == null || !json.isJsonArray()) {
-                    throw new IllegalArgumentException("No such array parameter `"+parameterInput.parameter()+"`");
-                }
-                List<FileInput> inputs = new ArrayList<>(json.getAsJsonArray().size());
-                for (int i = 0; i < json.getAsJsonArray().size(); i++) {
-                    var value = json.getAsJsonArray().get(i);
-                    if (!value.isJsonPrimitive()) {
-                        throw new IllegalArgumentException("Array parameter `"+parameterInput.parameter()+"` contains non-primitive value at index "+i);
-                    }
-                    if (!value.getAsJsonPrimitive().isString()) {
-                        throw new IllegalArgumentException("Array parameter `"+parameterInput.parameter()+"` contains non-string value at index "+i);
-                    }
-                    inputs.add(new FileInput(name+"_"+i, pathNotation(context, json.getAsJsonPrimitive().getAsString()), pathSensitivity));
-                }
-                yield new SimpleFileListInput(name, inputs);
+                Value value = workItem.parameters.get(parameterInput.parameter());
+                yield fileListFromValue(name, context, pathSensitivity, parameterInput, value);
             }
             case Input.TaskInput taskInput -> {
                 if (pathSensitivity != PathSensitivity.NONE) {
                     throw new IllegalArgumentException("Cannot use path sensitivity with task input");
                 }
-                yield new LibraryListFileListInput(name, new TaskOutputInput(name, new TaskOutput(taskInput.task(), taskInput.output())));
+                yield new LibraryListFileListInput(name, new TaskOutputInput(name, new TaskOutput(taskInput.output().taskName(), taskInput.output().name())));
             }
-            case Input.DirectInput directInput -> new LibraryListFileListInput(name, new FileInput(name, Path.of(directInput.value()), pathSensitivity));
+            case Input.DirectInput directInput -> fileListFromValue(name, context, pathSensitivity, null, directInput.value());
         };
+    }
+
+    private static FileListInput fileListFromValue(String name, Context context, PathSensitivity pathSensitivity, Input.@Nullable ParameterInput parameterInput, Value value) {
+        if (value instanceof Value.StringValue stringValue) {
+            return new LibraryListFileListInput(name, new FileInput(name, pathNotation(context, stringValue.value()), pathSensitivity));
+        } else if (value instanceof Value.ListValue listValue) {
+            List<FileInput> inputs = new ArrayList<>(listValue.value().size());
+            for (int i = 0; i < listValue.value().size(); i++) {
+                var singleValue = listValue.value().get(i);
+                if (!(singleValue instanceof Value.StringValue stringValue)) {
+                    if (parameterInput == null) {
+                        throw new IllegalArgumentException("Array value contains non-string value at index "+i);
+                    }
+                    throw new IllegalArgumentException("Array parameter `"+ parameterInput.parameter()+"` contains non-string value at index "+i);
+                }
+                inputs.add(new FileInput(name +"_"+i, pathNotation(context, stringValue.value()), pathSensitivity));
+            }
+            return new SimpleFileListInput(name, inputs);
+        } else if (value != null) {
+            if (parameterInput == null) {
+                throw new IllegalArgumentException("Value is not a string or list of strings");
+            }
+            throw new IllegalArgumentException("Parameter `"+ parameterInput.parameter()+"` is not a string or list of strings");
+        } else {
+            if (parameterInput == null) {
+                throw new IllegalArgumentException("No value provided");
+            }
+            throw new IllegalArgumentException("No such parameter `"+ parameterInput.parameter()+"`");
+        }
     }
 }

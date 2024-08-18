@@ -23,8 +23,8 @@ public class DownloadJsonTask extends Task {
 
     public DownloadJsonTask(TaskModel.DownloadJson model, WorkItem workItem, Context context) {
         super(model.name());
-        this.manifest = TaskInput.file("manifest", model.manifest(), workItem, context, PathSensitivity.NONE);
-        this.version = TaskInput.value("version", model.version(), workItem);
+        this.manifest = TaskInput.file("manifest", model.manifest, workItem, context, PathSensitivity.NONE);
+        this.version = TaskInput.value("version", model.version, workItem);
     }
 
     @Override
@@ -44,10 +44,10 @@ public class DownloadJsonTask extends Task {
             var versions = json.getAsJsonArray("versions");
             var matching = versions.asList().stream()
                 .filter(it ->
-                    it.getAsJsonObject().get("id").getAsString().equals(version.value())
+                    it.getAsJsonObject().get("id").getAsString().equals(version.value().value())
                 ).findFirst();
             if (matching.isEmpty()) {
-                throw new IllegalArgumentException("Version not found: " + version.value());
+                throw new IllegalArgumentException("Version not found: " + version.value().value());
             }
             var version = matching.get().getAsJsonObject();
             var sha1 = version.get("sha1").getAsString();

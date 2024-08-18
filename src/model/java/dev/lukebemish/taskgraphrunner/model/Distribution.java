@@ -1,8 +1,5 @@
 package dev.lukebemish.taskgraphrunner.model;
 
-import com.google.gson.JsonElement;
-import com.google.gson.JsonPrimitive;
-
 import java.util.Locale;
 
 public enum Distribution {
@@ -11,7 +8,7 @@ public enum Distribution {
     JOINED;
 
     Input.DirectInput direct() {
-        return new Input.DirectInput(this.name().toLowerCase(Locale.ROOT));
+        return new Input.DirectInput(new Value.StringValue(this.name().toLowerCase(Locale.ROOT)));
     }
 
     public static Distribution fromString(String value) {

@@ -1,7 +1,7 @@
 package dev.lukebemish.taskgraphrunner.cli;
 
-import com.google.gson.JsonObject;
 import dev.lukebemish.taskgraphrunner.model.Config;
+import dev.lukebemish.taskgraphrunner.model.Value;
 import dev.lukebemish.taskgraphrunner.runtime.Invocation;
 import dev.lukebemish.taskgraphrunner.runtime.Task;
 import dev.lukebemish.taskgraphrunner.runtime.util.JsonUtils;
@@ -12,6 +12,7 @@ import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.HashMap;
 import java.util.List;
 
 @CommandLine.Command(name = "run", mixinStandardHelpOptions = true, description = "Run a task graph")
@@ -30,20 +31,23 @@ public class Run implements Runnable {
 
     @Override
     public void run() {
-        JsonObject json;
         try (var reader = Files.newBufferedReader(config, StandardCharsets.UTF_8)) {
-            json = JsonUtils.GSON.fromJson(reader, JsonObject.class);
-            var config = Config.fromJson(json);
-            for (var workItem : config.workItems()) {
+            var config = JsonUtils.GSON.fromJson(reader, Config.class);
+            for (var workItem : config.workItems) {
+                var parameters = new HashMap<String, Value>();
+                parameters.putAll(config.parameters);
+                parameters.putAll(workItem.parameters);
+                workItem.parameters.clear();
+                workItem.parameters.putAll(parameters);
                 Invocation invocation = new Invocation(main.cacheDir);
                 for (var manifest : artifactManifests) {
                     invocation.artifactManifest(manifest);
                 }
-                for (var model : config.tasks()) {
+                for (var model : config.tasks) {
                     var task = Task.task(model, workItem, invocation);
                     invocation.addTask(task);
                 }
-                invocation.execute(workItem.results());
+                invocation.execute(workItem.results);
             }
         } catch (IOException e) {
             throw new UncheckedIOException(e);

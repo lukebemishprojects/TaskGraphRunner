@@ -1,23 +1,27 @@
 package dev.lukebemish.taskgraphrunner.model;
 
-import com.google.gson.JsonElement;
-import com.google.gson.JsonPrimitive;
+import com.google.gson.annotations.JsonAdapter;
+import com.google.gson.stream.JsonReader;
+import com.google.gson.stream.JsonWriter;
 
+import java.io.IOException;
+
+@JsonAdapter(Output.Adapter.class)
 public record Output(String taskName, String name) {
-    public JsonElement toJson() {
-        return new JsonPrimitive(taskName+"."+name);
-    }
+    public static final class Adapter extends GsonAdapter<Output> {
+        @Override
+        public void write(JsonWriter out, Output value) throws IOException {
+            out.value(value.taskName() + "." + value.name());
+        }
 
-    public static Output fromJson(JsonElement json) {
-        if (json.isJsonPrimitive() && json.getAsJsonPrimitive().isString()) {
-            String value = json.getAsString();
-            String[] parts = value.split("\\.");
+        @Override
+        public Output read(JsonReader in) throws IOException {
+            var value = in.nextString();
+            var parts = value.split("\\.");
             if (parts.length != 2) {
-                throw new IllegalArgumentException("Invalid output format `" + value + "`; should take the format `<task>.<output>`");
+                throw new IllegalArgumentException("Invalid output format, expected <task>.<output>: " + value);
             }
             return new Output(parts[0], parts[1]);
-        } else {
-            throw new IllegalArgumentException("Not a string `"+json+"`");
         }
     }
 }

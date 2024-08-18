@@ -3,6 +3,7 @@ package dev.lukebemish.taskgraphrunner.runtime.tasks;
 import com.google.gson.JsonObject;
 import dev.lukebemish.taskgraphrunner.model.PathSensitivity;
 import dev.lukebemish.taskgraphrunner.model.TaskModel;
+import dev.lukebemish.taskgraphrunner.model.Value;
 import dev.lukebemish.taskgraphrunner.model.WorkItem;
 import dev.lukebemish.taskgraphrunner.runtime.Context;
 import dev.lukebemish.taskgraphrunner.runtime.Task;
@@ -19,15 +20,15 @@ import java.util.Map;
 
 public class ListClasspathTask extends Task {
     private final TaskInput.HasFileInput versionJson;
-    private final TaskInput.ValueListInput additionalLibraries;
+    private final TaskInput.ValueInput additionalLibraries;
 
     public ListClasspathTask(TaskModel.ListClasspath model, WorkItem workItem, Context context) {
         super(model.name());
-        this.versionJson = TaskInput.file("versionJson", model.versionJson(), workItem, context, PathSensitivity.NONE);
-        if (model.additionalLibraries() == null) {
-            this.additionalLibraries = new TaskInput.ValueListInput("additionalLibraries", List.of());
+        this.versionJson = TaskInput.file("versionJson", model.versionJson, workItem, context, PathSensitivity.NONE);
+        if (model.additionalLibraries == null) {
+            this.additionalLibraries = new TaskInput.ValueInput("additionalLibraries", new Value.ListValue(List.of()));
         } else {
-            this.additionalLibraries = TaskInput.values("additionalLibraries", model.additionalLibraries(), workItem);
+            this.additionalLibraries = TaskInput.value("additionalLibraries", model.additionalLibraries, workItem);
         }
     }
 
@@ -99,8 +100,14 @@ public class ListClasspathTask extends Task {
                     artifacts.add("artifact:"+name);
                 }
             }
-            for (var input : additionalLibraries.inputs()) {
-                artifacts.add((String) input.value());
+            if (!(additionalLibraries.value() instanceof Value.ListValue additionalLibrariesList)) {
+                throw new IllegalArgumentException("additionalLibraries must be a list");
+            }
+            for (var input : additionalLibrariesList.value()) {
+                if (!(input instanceof Value.StringValue stringValue)) {
+                    throw new IllegalArgumentException("additionalLibraries must be a list of strings");
+                }
+                artifacts.add(stringValue.value());
             }
             Files.writeString(output, String.join(System.lineSeparator(), artifacts)+System.lineSeparator());
         } catch (IOException e) {

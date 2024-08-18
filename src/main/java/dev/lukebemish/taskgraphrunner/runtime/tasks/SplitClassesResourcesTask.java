@@ -1,6 +1,7 @@
 package dev.lukebemish.taskgraphrunner.runtime.tasks;
 
 import dev.lukebemish.taskgraphrunner.model.TaskModel;
+import dev.lukebemish.taskgraphrunner.model.Value;
 import dev.lukebemish.taskgraphrunner.model.WorkItem;
 import dev.lukebemish.taskgraphrunner.runtime.Context;
 import dev.lukebemish.taskgraphrunner.model.PathSensitivity;
@@ -25,11 +26,11 @@ public class SplitClassesResourcesTask extends Task {
 
     public SplitClassesResourcesTask(TaskModel.SplitClassesResources model, WorkItem workItem, Context context) {
         super(model.name());
-        this.input = TaskInput.file("input", model.input(), workItem, context, PathSensitivity.NONE);
-        if (model.excludePattern() != null) {
-            this.excludePattern = TaskInput.value("excludePattern", model.excludePattern(), workItem, "META-INF/.*");
+        this.input = TaskInput.file("input", model.input, workItem, context, PathSensitivity.NONE);
+        if (model.excludePattern != null) {
+            this.excludePattern = TaskInput.value("excludePattern", model.excludePattern, workItem, new Value.StringValue("META-INF/.*"));
         } else {
-            this.excludePattern = new TaskInput.ValueInput("excludePattern", "META-INF/.*");
+            this.excludePattern = new TaskInput.ValueInput("excludePattern", new Value.StringValue("META-INF/.*"));
         }
     }
 
@@ -48,7 +49,7 @@ public class SplitClassesResourcesTask extends Task {
         var classesJar = context.taskOutputPath(name(), "classes");
         var resourcesJar = context.taskOutputPath(name(), "resources");
 
-        var deny = Pattern.compile((String) excludePattern.value()).asMatchPredicate();
+        var deny = Pattern.compile((String) excludePattern.value().value()).asMatchPredicate();
 
         try (var input = new JarInputStream(new BufferedInputStream(Files.newInputStream(this.input.path(context))));
              var classesOutFile = new BufferedOutputStream(Files.newOutputStream(classesJar));

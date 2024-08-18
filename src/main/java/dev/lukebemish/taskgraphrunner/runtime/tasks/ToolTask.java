@@ -3,6 +3,11 @@ package dev.lukebemish.taskgraphrunner.runtime.tasks;
 import dev.lukebemish.taskgraphrunner.model.Argument;
 import dev.lukebemish.taskgraphrunner.model.PathSensitivity;
 import dev.lukebemish.taskgraphrunner.model.TaskModel;
+import dev.lukebemish.taskgraphrunner.model.Value.BooleanValue;
+import dev.lukebemish.taskgraphrunner.model.Value.ListValue;
+import dev.lukebemish.taskgraphrunner.model.Value.MapValue;
+import dev.lukebemish.taskgraphrunner.model.Value.NumberValue;
+import dev.lukebemish.taskgraphrunner.model.Value.StringValue;
 import dev.lukebemish.taskgraphrunner.model.WorkItem;
 import dev.lukebemish.taskgraphrunner.runtime.Context;
 import dev.lukebemish.taskgraphrunner.runtime.Task;
@@ -33,7 +38,7 @@ public class ToolTask extends Task {
         this.outputExtensions = new HashMap<>();
 
         this.args = new ArrayList<>();
-        processArgs(model.args(), this.args, workItem, context, outputExtensions);
+        processArgs(model.args, this.args, workItem, context, outputExtensions);
 
         this.inputs = args.stream().flatMap(Arg::inputs).toList();
     }
@@ -43,24 +48,24 @@ public class ToolTask extends Task {
             var arg = sourceArgs.get(i);
             var name = "arg" + i;
             args.add(switch (arg) {
-                case Argument.Classpath classpath -> new Arg.Classpath(TaskInput.files(name+"classpath", classpath.input(), workItem, context, PathSensitivity.NONE), classpath.file());
-                case Argument.FileInput fileInput -> new Arg.InputFile(TaskInput.file(name+"file", fileInput.input(), workItem, context, fileInput.pathSensitivity()));
-                case Argument.Value value -> new Arg.Value(TaskInput.value(name+"value", value.input(), workItem));
+                case Argument.Classpath classpath -> new Arg.Classpath(TaskInput.files(name+"classpath", classpath.input, workItem, context, PathSensitivity.NONE), classpath.file);
+                case Argument.FileInput fileInput -> new Arg.InputFile(TaskInput.file(name+"file", fileInput.input, workItem, context, fileInput.pathSensitivity));
+                case Argument.ValueInput valueInput -> new Arg.Value(TaskInput.value(name+"value", valueInput.input, workItem));
                 case Argument.Zip zip -> {
                     var inputs = new ArrayList<TaskInput.FileListInput>();
-                    for (int j = 0; j < zip.inputs().size(); j++) {
-                        var input = zip.inputs().get(j);
-                        inputs.add(TaskInput.files(name+"zip"+j, input, workItem, context, zip.pathSensitivity()));
+                    for (int j = 0; j < zip.inputs.size(); j++) {
+                        var input = zip.inputs.get(j);
+                        inputs.add(TaskInput.files(name+"zip"+j, input, workItem, context, zip.pathSensitivity));
                     }
                     yield new Arg.Zip(inputs);
                 }
                 case Argument.FileOutput fileOutput -> {
-                    var existing = outputExtensions.get(fileOutput.name());
-                    if (existing != null && !existing.equals(fileOutput.extension())) {
-                        throw new IllegalArgumentException("Output extension mismatch for " + fileOutput.name() + ", requested both " + existing + " and " + fileOutput.extension());
+                    var existing = outputExtensions.get(fileOutput.name);
+                    if (existing != null && !existing.equals(fileOutput.extension)) {
+                        throw new IllegalArgumentException("Output extension mismatch for " + fileOutput.name + ", requested both " + existing + " and " + fileOutput.extension);
                     }
-                    outputExtensions.put(fileOutput.name(), fileOutput.extension());
-                    yield new Arg.OutputFile(fileOutput.name());
+                    outputExtensions.put(fileOutput.name, fileOutput.extension);
+                    yield new Arg.OutputFile(fileOutput.name);
                 }
             });
         }
@@ -137,7 +142,19 @@ public class ToolTask extends Task {
 
             @Override
             public List<String> resolve(Path workingDirectory, String taskName, Context context, int argCount) {
-                return List.of(input.value().toString());
+                return List.of(stringifyValue(input().value()));
+            }
+
+            private static String stringifyValue(dev.lukebemish.taskgraphrunner.model.Value value) {
+                return switch (value) {
+                    case BooleanValue booleanValue -> booleanValue.value().toString();
+                    case ListValue listValue -> "["+listValue.value().stream().map(Value::stringifyValue).collect(Collectors.joining(","))+"]";
+                    case MapValue mapValue -> "["+mapValue.value().entrySet().stream().map(e ->
+                        e.getKey()+":"+stringifyValue(e.getValue())
+                    ).collect(Collectors.joining(","))+"]";
+                    case NumberValue numberValue -> numberValue.value().toString();
+                    case StringValue stringValue -> stringValue.value();
+                };
             }
         }
 
