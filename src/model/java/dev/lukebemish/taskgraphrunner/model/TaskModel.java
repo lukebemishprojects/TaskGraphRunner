@@ -10,6 +10,7 @@ import org.jspecify.annotations.Nullable;
 
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
@@ -27,30 +28,39 @@ public sealed abstract class TaskModel {
     }
 
     static final class Adapter extends GsonAdapter<TaskModel> {
-        private static final Map<String, TypeAdapter<? extends TaskModel>> TASK_TYPES = Map.of(
-                "downloadManifest", new DownloadManifest.Specialized(),
-                "downloadJson", new DownloadJson.Specialized(),
-                "downloadDistribution", new DownloadDistribution.Specialized(),
-                "downloadMappings", new DownloadMappings.Specialized(),
-                "splitClassesResources", new SplitClassesResources.Specialized(),
-                "listClasspath", new ListClasspath.Specialized(),
-                "injectSources", new InjectSources.Specialized(),
-                "patchSources", new PatchSources.Specialized(),
-                "retrieveData", new RetrieveData.Specialized(),
-                "tool", new Tool.Specialized()
-        );
-        private static final Map<Class<? extends TaskModel>, String> TASK_TYPE_NAMES = Map.of(
-            DownloadManifest.class, "downloadManifest",
-            DownloadJson.class, "downloadJson",
-            DownloadDistribution.class, "downloadDistribution",
-            DownloadMappings.class, "downloadMappings",
-            SplitClassesResources.class, "splitClassesResources",
-            ListClasspath.class, "listClasspath",
-            InjectSources.class, "injectSources",
-            PatchSources.class, "patchSources",
-            RetrieveData.class, "retrieveData",
-            Tool.class, "tool"
-        );
+        private static final Map<String, TypeAdapter<? extends TaskModel>> TASK_TYPES;
+        private static final Map<Class<? extends TaskModel>, String> TASK_TYPE_NAMES;
+
+        static {
+            var taskTypes = new HashMap<String, TypeAdapter<? extends TaskModel>>();
+            var taskTypeNames = new HashMap<Class<? extends TaskModel>, String>();
+
+            taskTypes.put("downloadManifest", new DownloadManifest.Specialized());
+            taskTypeNames.put(DownloadManifest.class, "downloadManifest");
+            taskTypes.put("downloadJson", new DownloadJson.Specialized());
+            taskTypeNames.put(DownloadJson.class, "downloadJson");
+            taskTypes.put("downloadDistribution", new DownloadDistribution.Specialized());
+            taskTypeNames.put(DownloadDistribution.class, "downloadDistribution");
+            taskTypes.put("downloadMappings", new DownloadMappings.Specialized());
+            taskTypeNames.put(DownloadMappings.class, "downloadMappings");
+            taskTypes.put("splitClassesResources", new SplitClassesResources.Specialized());
+            taskTypeNames.put(SplitClassesResources.class, "splitClassesResources");
+            taskTypes.put("listClasspath", new ListClasspath.Specialized());
+            taskTypeNames.put(ListClasspath.class, "listClasspath");
+            taskTypes.put("injectSources", new InjectSources.Specialized());
+            taskTypeNames.put(InjectSources.class, "injectSources");
+            taskTypes.put("patchSources", new PatchSources.Specialized());
+            taskTypeNames.put(PatchSources.class, "patchSources");
+            taskTypes.put("retrieveData", new RetrieveData.Specialized());
+            taskTypeNames.put(RetrieveData.class, "retrieveData");
+            taskTypes.put("tool", new Tool.Specialized());
+            taskTypeNames.put(Tool.class, "tool");
+            taskTypes.put("compile", new Compile.Specialized());
+            taskTypeNames.put(Compile.class, "compile");
+
+            TASK_TYPES = Map.copyOf(taskTypes);
+            TASK_TYPE_NAMES = Map.copyOf(taskTypeNames);
+        }
 
         @SuppressWarnings({"rawtypes", "unchecked"})
         @Override
@@ -75,6 +85,34 @@ public sealed abstract class TaskModel {
                 throw new IllegalArgumentException("Unknown task type `" + type + "`");
             }
             return taskType.fromJsonTree(json);
+        }
+    }
+
+    @JsonAdapter(Adapter.class)
+    public static final class Compile extends TaskModel {
+        public final List<Argument> args = new ArrayList<>();
+        public Input sources;
+        public Input sourcepath;
+        public Input classpath;
+
+        public Compile(String name, List<Argument> args, Input sources, Input sourcepath, Input classpath) {
+            super(name);
+            this.args.addAll(args);
+            this.sources = sources;
+            this.sourcepath = sourcepath;
+            this.classpath = classpath;
+        }
+
+        private static final class Specialized extends FieldAdapter<Compile> {
+            @Override
+            public Function<Values, Compile> build(Builder<Compile> builder) {
+                var name = builder.field("name", task -> task.name, String.class);
+                var arguments = builder.field("args", task -> task.args, TypeToken.getParameterized(List.class, Argument.class).getType());
+                var sources = builder.field("sources", task -> task.sources, Input.class);
+                var sourcepath = builder.field("sourcepath", task -> task.sourcepath, Input.class);
+                var classpath = builder.field("classpath", task -> task.classpath, Input.class);
+                return values -> new Compile(values.get(name), values.get(arguments), values.get(sources), values.get(sourcepath), values.get(classpath));
+            }
         }
     }
 

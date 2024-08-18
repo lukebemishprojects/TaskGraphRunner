@@ -15,6 +15,8 @@ public interface Context {
 
     Path taskDirectory(String taskName);
 
+    Path taskWorkingDirectory(String taskName);
+
     Task getTask(String name);
 
     Path findArtifact(String notation);

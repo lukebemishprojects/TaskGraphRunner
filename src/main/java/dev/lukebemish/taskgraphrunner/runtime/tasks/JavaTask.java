@@ -26,9 +26,7 @@ public abstract class JavaTask extends Task {
 
         var command = new ArrayList<String>();
 
-        var stateName = context.taskStatePath(name()).getFileName().toString();
-        var taskName = stateName.substring(0, stateName.lastIndexOf('.'));
-        var workingDirectory = context.taskDirectory(name()).resolve(taskName);
+        var workingDirectory = context.taskWorkingDirectory(name());
         try {
             Files.createDirectories(workingDirectory);
         } catch (IOException e) {

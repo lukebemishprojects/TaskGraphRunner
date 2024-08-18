@@ -78,6 +78,7 @@ public class Invocation implements Context {
         return cacheDirectory.resolve("results").resolve(taskName+"."+hash);
     }
 
+    @Override
     public Path taskStatePath(String taskName) {
         var task = getTask(taskName);
         MessageDigest digestContents;
@@ -89,6 +90,20 @@ public class Invocation implements Context {
         task.hashContents(RecordedInput.ByteConsumer.of(digestContents), this);
         var contentsHash = HexFormat.of().formatHex(digestContents.digest());
         return taskDirectory(taskName).resolve(contentsHash+".json");
+    }
+
+    @Override
+    public Path taskWorkingDirectory(String taskName) {
+        var task = getTask(taskName);
+        MessageDigest digestContents;
+        try {
+            digestContents = MessageDigest.getInstance("MD5");
+        } catch (NoSuchAlgorithmException e) {
+            throw new RuntimeException(e);
+        }
+        task.hashContents(RecordedInput.ByteConsumer.of(digestContents), this);
+        var contentsHash = HexFormat.of().formatHex(digestContents.digest());
+        return taskDirectory(taskName).resolve(contentsHash);
     }
 
     @Override

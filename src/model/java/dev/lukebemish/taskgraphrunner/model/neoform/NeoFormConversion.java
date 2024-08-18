@@ -153,6 +153,24 @@ public final class NeoFormConversion {
             config.tasks.add(task);
         }
 
+        // Make recompile task
+        var recompile = new TaskModel.Compile(
+            "recompile",
+            List.of(
+                new Argument.ValueInput(new Input.DirectInput(new Value.StringValue("--release"))),
+                new Argument.ValueInput(new Input.DirectInput(new Value.StringValue(source.javaTarget()+""))), // Target the release the neoform config targets
+                new Argument.ValueInput(new Input.DirectInput(new Value.StringValue("-proc:none"))), // No APs in Minecraft's sources
+                new Argument.ValueInput(new Input.DirectInput(new Value.StringValue("-nowarn"))), // We'll handle the diagnostics ourselves
+                new Argument.ValueInput(new Input.DirectInput(new Value.StringValue("-g"))), // Gradle does it...
+                new Argument.ValueInput(new Input.DirectInput(new Value.StringValue("-XDuseUnsharedTable=true"))), // Gradle does it?
+                new Argument.ValueInput(new Input.DirectInput(new Value.StringValue("-implicit:none"))) // If we inject stubs, don't output those
+            ),
+            new Input.TaskInput(new Output("patch", "output")),
+            new Input.DirectInput(new Value.ListValue(List.of())),
+            new Input.TaskInput(new Output(listLibrariesName, "output"))
+        );
+        config.tasks.add(recompile);
+
         return config;
     }
 

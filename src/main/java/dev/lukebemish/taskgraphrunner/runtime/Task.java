@@ -7,6 +7,7 @@ import com.google.gson.JsonObject;
 import com.google.gson.JsonPrimitive;
 import dev.lukebemish.taskgraphrunner.model.TaskModel;
 import dev.lukebemish.taskgraphrunner.model.WorkItem;
+import dev.lukebemish.taskgraphrunner.runtime.tasks.CompileTask;
 import dev.lukebemish.taskgraphrunner.runtime.tasks.DownloadDistributionTask;
 import dev.lukebemish.taskgraphrunner.runtime.tasks.DownloadJsonTask;
 import dev.lukebemish.taskgraphrunner.runtime.tasks.DownloadManifestTask;
@@ -274,6 +275,7 @@ public abstract class Task implements RecordedInput {
             case TaskModel.InjectSources injectSources -> new InjectSourcesTask(injectSources, workItem, context);
             case TaskModel.PatchSources patchSources -> new PatchSourcesTask(patchSources, workItem, context);
             case TaskModel.RetrieveData retrieveData -> new RetrieveDataTask(retrieveData, workItem, context);
+            case TaskModel.Compile compile -> new CompileTask(compile, workItem, context);
         };
     }
 
