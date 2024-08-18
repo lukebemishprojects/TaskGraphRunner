@@ -89,7 +89,6 @@ public class ToolTask extends Task {
             .orElseThrow();
 
         var command = new ArrayList<String>();
-        command.add(javaExecutablePath);
 
         var stateName = context.taskStatePath(name()).getFileName().toString();
         var taskName = stateName.substring(0, stateName.lastIndexOf('.'));
@@ -106,20 +105,28 @@ public class ToolTask extends Task {
         }
 
         var logFile = workingDirectory.resolve("log.txt");
+        var argsFile = workingDirectory.resolve("args.txt");
 
         try {
             try (var writer = Files.newBufferedWriter(logFile, StandardCharsets.UTF_8)) {
                 writer.append("-".repeat(80)).append("\n\n");
                 writer.append("Command-Line:\n");
+                writer.append(" - ").append(javaExecutablePath).append("\n");
                 for (String s : command) {
                     writer.append(" - ").append(s).append("\n");
                 }
                 writer.append("-".repeat(80)).append("\n\n");
             }
 
+            try (var writer = Files.newBufferedWriter(argsFile, StandardCharsets.UTF_8)) {
+                for (var argument : command) {
+                    writer.write(argument+System.lineSeparator());
+                }
+            }
+
             var process = new ProcessBuilder()
                 .directory(workingDirectory.toFile())
-                .command(command)
+                .command(List.of(javaExecutablePath, "@args.txt"))
                 .redirectErrorStream(true)
                 .redirectOutput(ProcessBuilder.Redirect.appendTo(logFile.toFile()))
                 .start();
