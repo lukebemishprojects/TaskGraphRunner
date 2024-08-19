@@ -8,6 +8,7 @@ import dev.lukebemish.taskgraphrunner.runtime.TaskInput;
 import dev.lukebemish.taskgraphrunner.runtime.util.Tools;
 import org.jspecify.annotations.Nullable;
 
+import java.io.File;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.file.Files;
@@ -21,11 +22,13 @@ import java.util.zip.ZipOutputStream;
 public class JstTask extends JavaTask {
     private final TaskInput.HasFileInput input;
     private final TaskInput.FileListInput classpath;
+    private final TaskInput.FileListInput jstClasspath;
     private final TaskInput.@Nullable FileListInput accessTransformers;
     private final TaskInput.@Nullable FileListInput interfaceInjection;
     private final TaskInput.@Nullable HasFileInput parchmentData;
     private final List<TaskInput> inputs;
     private final List<ArgumentProcessor.Arg> args;
+    private final List<ArgumentProcessor.Arg> jvmArgs;
     private final Map<String, String> outputExtensions;
 
     public JstTask(TaskModel.Jst model, WorkItem workItem, Context context) {
@@ -35,8 +38,22 @@ public class JstTask extends JavaTask {
 
         this.input = TaskInput.file("input", model.input, workItem, context, PathSensitivity.NONE);
         inputs.add(this.input);
-        this.classpath = TaskInput.files("classpath", model.classpath, workItem, context, PathSensitivity.NONE);
+        List<TaskInput.FileListInput> classpathParts = new ArrayList<>();
+        for (int i = 0; i < model.classpath.size(); i++) {
+            var part = model.classpath.get(i);
+            classpathParts.add(TaskInput.files("classpath" + i, part, workItem, context, PathSensitivity.NONE));
+        }
+        this.classpath = new TaskInput.RecursiveFileListInput("classpath", classpathParts);
         inputs.add(this.classpath);
+
+        List<TaskInput.FileListInput> jstClasspathParts = new ArrayList<>();
+        for (int i = 0; i < model.jstClasspath.size(); i++) {
+            var part = model.jstClasspath.get(i);
+            jstClasspathParts.add(TaskInput.files("jstClasspath" + i, part, workItem, context, PathSensitivity.NONE));
+        }
+        this.jstClasspath = new TaskInput.RecursiveFileListInput("jstClasspath", jstClasspathParts);
+        inputs.add(this.jstClasspath);
+
         if (model.accessTransformers != null) {
             this.accessTransformers = TaskInput.files("accessTransformers", model.accessTransformers, workItem, context, PathSensitivity.NONE);
             inputs.add(this.accessTransformers);
@@ -61,13 +78,29 @@ public class JstTask extends JavaTask {
         outputExtensions.put("stubs", "zip");
 
         this.args = new ArrayList<>();
-        ArgumentProcessor.processArgs(model.args, this.args, workItem, context, outputExtensions);
+        ArgumentProcessor.processArgs("arg", model.args, this.args, workItem, context, outputExtensions);
+
+        this.jvmArgs = new ArrayList<>();
+        ArgumentProcessor.processArgs("jvmArg", model.jvmArgs, this.jvmArgs, workItem, context, outputExtensions);
     }
 
     @Override
     protected void collectArguments(ArrayList<String> command, Context context, Path workingDirectory) {
-        command.add("-jar");
-        command.add(context.findArtifact(Tools.JST).toAbsolutePath().toString());
+        for (int i = 0; i < jvmArgs.size(); i++) {
+            var arg = jvmArgs.get(i);
+            command.addAll(arg.resolve(workingDirectory, name(), context, i));
+        }
+
+        command.add("-cp");
+        var cp = jstClasspath.classpath(context);
+        var jst = context.findArtifact(Tools.JST).toAbsolutePath().toString();
+        if (cp.isBlank()) {
+            cp = jst;
+        } else {
+            cp = cp + File.pathSeparator + jst;
+        }
+        command.add(cp);
+        command.add("net.neoforged.jst.cli.Main");
 
         command.add(input.path(context).toAbsolutePath().toString());
         command.add(context.taskOutputPath(name(), "output").toAbsolutePath().toString());

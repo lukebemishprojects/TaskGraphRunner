@@ -143,12 +143,12 @@ public abstract sealed class Argument {
 
     @JsonAdapter(ArgumentAdapter.class)
     public static final class LibrariesFile extends Argument {
-        public Input input;
+        public final List<Input> input = new ArrayList<>();
         public @Nullable Input prefix;
 
-        public LibrariesFile(@Nullable String pattern, Input input, @Nullable Input prefix) {
+        public LibrariesFile(@Nullable String pattern, List<Input> input, @Nullable Input prefix) {
             super(pattern);
-            this.input = input;
+            this.input.addAll(input);
             this.prefix = prefix;
         }
 
@@ -156,7 +156,7 @@ public abstract sealed class Argument {
             @Override
             public Function<Values, LibrariesFile> build(Builder<LibrariesFile> builder) {
                 var pattern = builder.field("pattern", arg -> arg.pattern, String.class);
-                var input = builder.field("input", arg -> arg.input, Input.class);
+                var input = builder.field("input", arg -> arg.input, TypeToken.getParameterized(List.class, Input.class).getType());
                 var prefix = builder.field("prefix", arg -> arg.prefix, Input.class);
                 return values -> new LibrariesFile(values.get(pattern), values.get(input), values.get(prefix));
             }
@@ -165,18 +165,18 @@ public abstract sealed class Argument {
 
     @JsonAdapter(ArgumentAdapter.class)
     public static final class Classpath extends Argument {
-        public Input input;
+        public final List<Input> input = new ArrayList<>();
 
-        public Classpath(@Nullable String pattern, Input input) {
+        public Classpath(@Nullable String pattern, List<Input> input) {
             super(pattern);
-            this.input = input;
+            this.input.addAll(input);
         }
 
         private static final class Specialized extends FieldAdapter<Classpath> {
             @Override
             public Function<Values, Classpath> build(Builder<Classpath> builder) {
                 var pattern = builder.field("pattern", arg -> arg.pattern, String.class);
-                var input = builder.field("input", arg -> arg.input, Input.class);
+                var input = builder.field("input", arg -> arg.input, TypeToken.getParameterized(List.class, Input.class).getType());
                 return values -> new Classpath(values.get(pattern), values.get(input));
             }
         }

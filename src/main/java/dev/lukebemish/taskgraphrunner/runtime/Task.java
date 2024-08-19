@@ -130,7 +130,7 @@ public abstract class Task implements RecordedInput {
                         updateState(existingState, context);
                         executed = true;
                         running = false;
-                        LOGGER.info("Task `"+name+"` is up-to-date");
+                        LOGGER.info("Task `"+name+"` is up-to-date.");
                         return;
                     }
                 }

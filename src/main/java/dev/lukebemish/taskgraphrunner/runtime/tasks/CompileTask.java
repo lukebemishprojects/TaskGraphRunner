@@ -46,12 +46,22 @@ public class CompileTask extends Task {
         outputExtensions.put("output", "jar");
 
         this.args = new ArrayList<>();
-        ArgumentProcessor.processArgs(model.args, this.args, workItem, context, outputExtensions);
+        ArgumentProcessor.processArgs("arg", model.args, this.args, workItem, context, outputExtensions);
 
         this.inputs = new ArrayList<>(args.stream().flatMap(ArgumentProcessor.Arg::inputs).toList());
         this.sources = TaskInput.file("sources", model.sources, workItem, context, PathSensitivity.NONE);
-        this.classpath = TaskInput.files("classpath", model.classpath, workItem, context, PathSensitivity.NONE);
-        this.sourcepath = TaskInput.files("sourcepath", model.sourcepath, workItem, context, PathSensitivity.NONE);
+        List<TaskInput.FileListInput> classpathParts = new ArrayList<>();
+        for (int i = 0; i < model.classpath.size(); i++) {
+            var part = model.classpath.get(i);
+            classpathParts.add(TaskInput.files("classpath" + i, part, workItem, context, PathSensitivity.NONE));
+        }
+        this.classpath = new TaskInput.RecursiveFileListInput("classpath", classpathParts);
+        List<TaskInput.FileListInput> sourcepathParts = new ArrayList<>();
+        for (int i = 0; i < model.sourcepath.size(); i++) {
+            var part = model.sourcepath.get(i);
+            sourcepathParts.add(TaskInput.files("sourcepath" + i, part, workItem, context, PathSensitivity.NONE));
+        }
+        this.sourcepath = new TaskInput.RecursiveFileListInput("sourcepath", sourcepathParts);
         this.inputs.add(sources);
         this.inputs.add(classpath);
         this.inputs.add(sourcepath);

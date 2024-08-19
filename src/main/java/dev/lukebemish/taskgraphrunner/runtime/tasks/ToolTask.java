@@ -22,7 +22,7 @@ public class ToolTask extends JavaTask {
         this.outputExtensions = new HashMap<>();
 
         this.args = new ArrayList<>();
-        ArgumentProcessor.processArgs(model.args, this.args, workItem, context, outputExtensions);
+        ArgumentProcessor.processArgs("arg", model.args, this.args, workItem, context, outputExtensions);
 
         this.inputs = args.stream().flatMap(ArgumentProcessor.Arg::inputs).toList();
     }

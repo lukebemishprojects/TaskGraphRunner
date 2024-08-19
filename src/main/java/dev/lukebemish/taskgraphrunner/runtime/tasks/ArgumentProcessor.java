@@ -8,6 +8,7 @@ import dev.lukebemish.taskgraphrunner.runtime.Context;
 import dev.lukebemish.taskgraphrunner.runtime.TaskInput;
 import org.jspecify.annotations.Nullable;
 
+import java.io.File;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.file.Files;
@@ -22,13 +23,20 @@ import java.util.stream.Stream;
 public final class ArgumentProcessor {
     private ArgumentProcessor() {}
 
-    static void processArgs(List<Argument> sourceArgs, List<Arg> args, WorkItem workItem, Context context, Map<String, String> outputExtensions) {
+    static void processArgs(String prefix, List<Argument> sourceArgs, List<Arg> args, WorkItem workItem, Context context, Map<String, String> outputExtensions) {
         for (int i = 0; i < sourceArgs.size(); i++) {
             var arg = sourceArgs.get(i);
-            var name = "arg" + i;
+            var name = prefix + i;
             var pattern = arg.pattern == null ? "{}" : arg.pattern;
             args.add(switch (arg) {
-                case Argument.Classpath classpath -> new Arg.Classpath(pattern, TaskInput.files(name+"classpath", classpath.input, workItem, context, PathSensitivity.NONE));
+                case Argument.Classpath classpath -> {
+                    List<TaskInput.FileListInput> inputs = new ArrayList<>();
+                    for (int j = 0; j < classpath.input.size(); j++) {
+                        var input = classpath.input.get(j);
+                        inputs.add(TaskInput.files(name+"classpath"+j, input, workItem, context, PathSensitivity.NONE));
+                    }
+                    yield new Arg.Classpath(pattern, inputs);
+                }
                 case Argument.FileInput fileInput -> new Arg.InputFile(pattern, TaskInput.file(name+"file", fileInput.input, workItem, context, fileInput.pathSensitivity));
                 case Argument.ValueInput valueInput -> new Arg.Value(pattern, TaskInput.value(name+"value", valueInput.input, workItem));
                 case Argument.Zip zip -> {
@@ -48,11 +56,16 @@ public final class ArgumentProcessor {
                     yield new Arg.OutputFile(pattern, fileOutput.name);
                 }
                 case Argument.LibrariesFile librariesFile -> {
-                    TaskInput.ValueInput prefix = null;
+                    TaskInput.ValueInput prefixInput = null;
                     if (librariesFile.prefix != null) {
-                        prefix = TaskInput.value(name+"librariesFilePrefix", librariesFile.prefix, workItem, new Value.StringValue(""));
+                        prefixInput = TaskInput.value(name+"librariesFilePrefix", librariesFile.prefix, workItem, new Value.StringValue(""));
                     }
-                    yield new Arg.LibrariesFile(pattern, TaskInput.files(name+"librariesFile", librariesFile.input, workItem, context, PathSensitivity.NONE), prefix);
+                    List<TaskInput.FileListInput> inputs = new ArrayList<>();
+                    for (int j = 0; j < librariesFile.input.size(); j++) {
+                        var input = librariesFile.input.get(j);
+                        inputs.add(TaskInput.files(name+"librariesFile"+j, input, workItem, context, PathSensitivity.NONE));
+                    }
+                    yield new Arg.LibrariesFile(pattern, inputs, prefixInput);
                 }
             });
         }
@@ -95,20 +108,20 @@ public final class ArgumentProcessor {
             }
         }
 
-        record LibrariesFile(String pattern, TaskInput.FileListInput input, TaskInput.@Nullable ValueInput prefix) implements Arg {
+        record LibrariesFile(String pattern, List<TaskInput.FileListInput> input, TaskInput.@Nullable ValueInput prefix) implements Arg {
 
             @Override
             public Stream<TaskInput> inputs() {
                 if (prefix == null) {
-                    return Stream.of(input);
+                    return input.stream().map(Function.identity());
                 }
-                return Stream.of(input, prefix);
+                return Stream.concat(input.stream(), Stream.of(prefix));
             }
 
             @Override
             public List<String> resolve(Path workingDirectory, String taskName, Context context, int argCount) {
                 Path filePath = workingDirectory.resolve("args." + argCount + ".txt");
-                var content = input.paths(context).stream().map(path -> {
+                var content = input.stream().flatMap(i -> i.paths(context).stream()).map(path -> {
                     if (prefix == null) {
                         return path.toAbsolutePath().toString();
                     }
@@ -123,15 +136,15 @@ public final class ArgumentProcessor {
             }
         }
 
-        record Classpath(String pattern, TaskInput.FileListInput input) implements Arg {
+        record Classpath(String pattern, List<TaskInput.FileListInput> input) implements Arg {
             @Override
             public Stream<TaskInput> inputs() {
-                return Stream.of(input);
+                return input.stream().map(Function.identity());
             }
 
             @Override
             public List<String> resolve(Path workingDirectory, String taskName, Context context, int argCount) {
-                return List.of(pattern.replace("{}", input.classpath(context)));
+                return List.of(pattern.replace("{}", input.stream().map(i -> i.classpath(context)).collect(Collectors.joining(File.pathSeparator))));
             }
         }
 

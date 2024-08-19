@@ -222,6 +222,42 @@ public sealed interface TaskInput extends RecordedInput {
         return context.artifactManifest().resolve(line);
     }
 
+    record RecursiveFileListInput(String name, List<FileListInput> inputs) implements FileListInput {
+
+        @Override
+        public List<Path> paths(Context context) {
+            return inputs.stream().flatMap(i -> i.paths(context).stream()).toList();
+        }
+
+        @Override
+        public void hashReference(ByteConsumer digest, Context context) {
+            for (FileListInput input : inputs) {
+                input.hashReference(digest, context);
+            }
+        }
+
+        @Override
+        public void hashContents(ByteConsumer digest, Context context) {
+            for (FileListInput input : inputs) {
+                input.hashContents(digest, context);
+            }
+        }
+
+        @Override
+        public List<String> dependencies() {
+            return inputs.stream().flatMap(input -> input.dependencies().stream()).toList();
+        }
+
+        @Override
+        public JsonElement recordedValue(Context context) {
+            JsonArray array = new JsonArray();
+            for (FileListInput input : inputs) {
+                array.add(input.recordedValue(context));
+            }
+            return array;
+        }
+    }
+
     record SimpleFileListInput(String name, List<HasFileInput> inputs) implements FileListInput {
         @Override
         public void hashReference(ByteConsumer digest, Context context) {
@@ -340,13 +376,14 @@ public sealed interface TaskInput extends RecordedInput {
             List<HasFileInput> inputs = new ArrayList<>(listValue.value().size());
             for (int i = 0; i < listValue.value().size(); i++) {
                 var singleValue = listValue.value().get(i);
-                if (!(singleValue instanceof Value.StringValue stringValue)) {
+                if (singleValue instanceof Value.StringValue stringValue) {
+                    inputs.add(new FileInput(name +"_"+i, pathNotation(context, stringValue.value()), pathSensitivity));
+                } else {
                     if (parameterInput == null) {
                         throw new IllegalArgumentException("Array value contains non-string value at index "+i);
                     }
                     throw new IllegalArgumentException("Array parameter `"+ parameterInput.parameter()+"` contains non-string value at index "+i);
                 }
-                inputs.add(new FileInput(name +"_"+i, pathNotation(context, stringValue.value()), pathSensitivity));
             }
             return new SimpleFileListInput(name, inputs);
         } else if (value != null) {

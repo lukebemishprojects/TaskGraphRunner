@@ -200,8 +200,10 @@ public final class NeoFormConversion {
         var jst = new TaskModel.Jst(
             "jstTransform",
             List.of(),
+            List.of(),
             new Input.TaskInput(new Output("patch", "output")),
-            new Input.TaskInput(new Output(listLibrariesName, "output"))
+            List.of(new Input.TaskInput(new Output(listLibrariesName, "output"))),
+            null
         );
 
         if (options.accessTransformersParameter != null) {
@@ -229,8 +231,8 @@ public final class NeoFormConversion {
                 new Argument.ValueInput(null, new Input.DirectInput(new Value.StringValue("-implicit:none"))) // If we inject stubs, don't output those
             ),
             new Input.TaskInput(new Output("jstTransform", "output")),
-            new Input.ListInput(List.of(new Input.TaskInput(new Output("jstTransform", "stubs")))),
-            new Input.TaskInput(new Output(listLibrariesName, "output"))
+            List.of(new Input.ListInput(List.of(new Input.TaskInput(new Output("jstTransform", "stubs"))))),
+            List.of(new Input.TaskInput(new Output(listLibrariesName, "output")))
         );
         config.tasks.add(recompile);
 
@@ -243,7 +245,7 @@ public final class NeoFormConversion {
             return switch (name) {
                 case "libraries" -> new Argument.LibrariesFile(
                     null,
-                    new Input.TaskInput(new Output(listLibrariesName, "output")),
+                    List.of(new Input.TaskInput(new Output(listLibrariesName, "output"))),
                     new Input.DirectInput(new Value.StringValue("-e="))
                     );
                 case "version" -> new Argument.ValueInput(null, new Input.DirectInput(new Value.StringValue(fullConfig.version())));

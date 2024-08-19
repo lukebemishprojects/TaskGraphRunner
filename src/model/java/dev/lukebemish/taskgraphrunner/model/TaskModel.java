@@ -92,32 +92,40 @@ public sealed abstract class TaskModel {
 
     @JsonAdapter(Adapter.class)
     public static final class Jst extends TaskModel {
+        public final List<Argument> jvmArgs = new ArrayList<>();
         public final List<Argument> args = new ArrayList<>();
         public Input input;
-        public Input classpath;
+        public final List<Input> classpath = new ArrayList<>();
+        public final List<Input> jstClasspath = new ArrayList<>();
         public @Nullable Input accessTransformers = null;
         public @Nullable Input interfaceInjection = null;
         public @Nullable Input parchmentData = null;
 
-        public Jst(String name, List<Argument> args, Input input, Input classpath) {
+        public Jst(String name, List<Argument> jvmArgs, List<Argument> args, Input input, List<Input> classpath, @Nullable List<Input> jstClasspath) {
             super(name);
             this.args.addAll(args);
+            this.jvmArgs.addAll(jvmArgs);
             this.input = input;
-            this.classpath = classpath;
+            this.classpath.addAll(classpath);
+            if (jstClasspath != null) {
+                this.jstClasspath.addAll(jstClasspath);
+            }
         }
 
         private static final class Specialized extends FieldAdapter<Jst> {
             @Override
             public Function<Values, Jst> build(Builder<Jst> builder) {
                 var name = builder.field("name", task -> task.name, String.class);
-                var arguments = builder.field("args", task -> task.args, TypeToken.getParameterized(List.class, Argument.class).getType());
+                var args = builder.field("args", task -> task.args, TypeToken.getParameterized(List.class, Argument.class).getType());
+                var jvmArgs = builder.field("jvmArgs", task -> task.jvmArgs, TypeToken.getParameterized(List.class, Argument.class).getType());
                 var input = builder.field("input", task -> task.input, Input.class);
-                var classpath = builder.field("classpath", task -> task.classpath, Input.class);
+                var classpath = builder.field("classpath", task -> task.classpath, TypeToken.getParameterized(List.class, Input.class).getType());
+                var jstClasspath = builder.field("jstClasspath", task -> task.jstClasspath, TypeToken.getParameterized(List.class, Input.class).getType());
                 var accessTransformers = builder.field("accessTransformers", task -> task.accessTransformers, Input.class);
                 var interfaceInjection = builder.field("interfaceInjection", task -> task.interfaceInjection, Input.class);
                 var parchmentData = builder.field("parchmentData", task -> task.parchmentData, Input.class);
                 return values -> {
-                    var jst = new Jst(values.get(name), values.get(arguments), values.get(input), values.get(classpath));
+                    var jst = new Jst(values.get(name), values.get(jvmArgs), values.get(args), values.get(input), values.get(classpath), values.get(jstClasspath));
                     jst.accessTransformers = values.get(accessTransformers);
                     jst.interfaceInjection = values.get(interfaceInjection);
                     jst.parchmentData = values.get(parchmentData);
@@ -131,15 +139,15 @@ public sealed abstract class TaskModel {
     public static final class Compile extends TaskModel {
         public final List<Argument> args = new ArrayList<>();
         public Input sources;
-        public Input sourcepath;
-        public Input classpath;
+        public final List<Input> sourcepath = new ArrayList<>();
+        public final List<Input> classpath = new ArrayList<>();
 
-        public Compile(String name, List<Argument> args, Input sources, Input sourcepath, Input classpath) {
+        public Compile(String name, List<Argument> args, Input sources, List<Input> sourcepath, List<Input> classpath) {
             super(name);
             this.args.addAll(args);
             this.sources = sources;
-            this.sourcepath = sourcepath;
-            this.classpath = classpath;
+            this.sourcepath.addAll(sourcepath);
+            this.classpath.addAll(classpath);
         }
 
         private static final class Specialized extends FieldAdapter<Compile> {
@@ -148,8 +156,8 @@ public sealed abstract class TaskModel {
                 var name = builder.field("name", task -> task.name, String.class);
                 var arguments = builder.field("args", task -> task.args, TypeToken.getParameterized(List.class, Argument.class).getType());
                 var sources = builder.field("sources", task -> task.sources, Input.class);
-                var sourcepath = builder.field("sourcepath", task -> task.sourcepath, Input.class);
-                var classpath = builder.field("classpath", task -> task.classpath, Input.class);
+                var sourcepath = builder.field("sourcepath", task -> task.sourcepath, TypeToken.getParameterized(List.class, Input.class).getType());
+                var classpath = builder.field("classpath", task -> task.classpath, TypeToken.getParameterized(List.class, Input.class).getType());
                 return values -> new Compile(values.get(name), values.get(arguments), values.get(sources), values.get(sourcepath), values.get(classpath));
             }
         }
