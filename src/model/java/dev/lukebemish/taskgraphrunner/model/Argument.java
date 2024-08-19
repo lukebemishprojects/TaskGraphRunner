@@ -17,20 +17,31 @@ import java.util.function.Function;
 
 @JsonAdapter(Argument.ArgumentAdapter.class)
 public abstract sealed class Argument {
+    /**
+     * A string pattern for the argument; any {@code "{}"} in it will be replaced by the argument value
+     */
+    public @Nullable String pattern;
+
+    public Argument(@Nullable String pattern) {
+        this.pattern = pattern;
+    }
+
     static final class ArgumentAdapter extends GsonAdapter<Argument> {
         private static final Map<String, TypeAdapter<? extends Argument>> TASK_TYPES = Map.of(
             "value", new ValueInput.Specialized(),
             "fileInput", new FileInput.Specialized(),
             "fileOutput", new FileOutput.Specialized(),
             "classpath", new Classpath.Specialized(),
-            "zip", new Zip.Specialized()
+            "zip", new Zip.Specialized(),
+            "librariesFile", new LibrariesFile.Specialized()
         );
         private static final Map<Class<? extends Argument>, String> TASK_TYPE_NAMES = Map.of(
             ValueInput.class, "value",
             FileInput.class, "fileInput",
             FileOutput.class, "fileOutput",
             Classpath.class, "classpath",
-            Zip.class, "zip"
+            Zip.class, "zip",
+            LibrariesFile.class, "librariesFile"
         );
 
         @SuppressWarnings({"rawtypes", "unchecked"})
@@ -54,7 +65,7 @@ public abstract sealed class Argument {
         @Override
         public Argument read(JsonReader in) throws IOException {
             if (in.peek() == JsonToken.STRING) {
-                return new ValueInput(GSON.getAdapter(Input.class).read(in));
+                return new ValueInput(null, GSON.getAdapter(Input.class).read(in));
             }
 
             JsonObject json = GSON.fromJson(in, JsonObject.class);
@@ -71,15 +82,17 @@ public abstract sealed class Argument {
     public static final class ValueInput extends Argument {
         public Input input;
 
-        public ValueInput(Input input) {
+        public ValueInput(@Nullable String pattern, Input input) {
+            super(pattern);
             this.input = input;
         }
 
         private static final class Specialized extends FieldAdapter<ValueInput> {
             @Override
             public Function<Values, ValueInput> build(Builder<ValueInput> builder) {
+                var pattern = builder.field("pattern", arg -> arg.pattern, String.class);
                 var input = builder.field("input", arg -> arg.input, Input.class);
-                return values -> new ValueInput(values.get(input));
+                return values -> new ValueInput(values.get(pattern), values.get(input));
             }
         }
     }
@@ -89,7 +102,8 @@ public abstract sealed class Argument {
         public Input input;
         public PathSensitivity pathSensitivity;
 
-        public FileInput(Input input, PathSensitivity pathSensitivity) {
+        public FileInput(@Nullable String pattern, Input input, PathSensitivity pathSensitivity) {
+            super(pattern);
             this.input = input;
             this.pathSensitivity = pathSensitivity;
         }
@@ -97,9 +111,10 @@ public abstract sealed class Argument {
         private static final class Specialized extends FieldAdapter<FileInput> {
             @Override
             public Function<Values, FileInput> build(Builder<FileInput> builder) {
+                var pattern = builder.field("pattern", arg -> arg.pattern, String.class);
                 var input = builder.field("input", arg -> arg.input, Input.class);
                 var pathSensitivity = builder.field("pathSensitivity", arg -> arg.pathSensitivity, PathSensitivity.class);
-                return values -> new FileInput(values.get(input), values.get(pathSensitivity));
+                return values -> new FileInput(values.get(pattern), values.get(input), values.get(pathSensitivity));
             }
         }
     }
@@ -109,7 +124,8 @@ public abstract sealed class Argument {
         public String name;
         public String extension;
 
-        public FileOutput(String name, String extension) {
+        public FileOutput(@Nullable String pattern, String name, String extension) {
+            super(pattern);
             this.name = name;
             this.extension = extension;
         }
@@ -117,9 +133,32 @@ public abstract sealed class Argument {
         private static final class Specialized extends FieldAdapter<FileOutput> {
             @Override
             public Function<Values, FileOutput> build(Builder<FileOutput> builder) {
+                var pattern = builder.field("pattern", arg -> arg.pattern, String.class);
                 var name = builder.field("name", arg -> arg.name, String.class);
                 var extension = builder.field("extension", arg -> arg.extension, String.class);
-                return values -> new FileOutput(values.get(name), values.get(extension));
+                return values -> new FileOutput(values.get(pattern), values.get(name), values.get(extension));
+            }
+        }
+    }
+
+    @JsonAdapter(ArgumentAdapter.class)
+    public static final class LibrariesFile extends Argument {
+        public Input input;
+        public @Nullable Input prefix;
+
+        public LibrariesFile(@Nullable String pattern, Input input, @Nullable Input prefix) {
+            super(pattern);
+            this.input = input;
+            this.prefix = prefix;
+        }
+
+        private static final class Specialized extends FieldAdapter<LibrariesFile> {
+            @Override
+            public Function<Values, LibrariesFile> build(Builder<LibrariesFile> builder) {
+                var pattern = builder.field("pattern", arg -> arg.pattern, String.class);
+                var input = builder.field("input", arg -> arg.input, Input.class);
+                var prefix = builder.field("prefix", arg -> arg.prefix, Input.class);
+                return values -> new LibrariesFile(values.get(pattern), values.get(input), values.get(prefix));
             }
         }
     }
@@ -127,22 +166,18 @@ public abstract sealed class Argument {
     @JsonAdapter(ArgumentAdapter.class)
     public static final class Classpath extends Argument {
         public Input input;
-        public boolean file;
-        public @Nullable String prefix;
 
-        public Classpath(Input input, boolean file, @Nullable String prefix) {
+        public Classpath(@Nullable String pattern, Input input) {
+            super(pattern);
             this.input = input;
-            this.file = file;
-            this.prefix = prefix;
         }
 
         private static final class Specialized extends FieldAdapter<Classpath> {
             @Override
             public Function<Values, Classpath> build(Builder<Classpath> builder) {
+                var pattern = builder.field("pattern", arg -> arg.pattern, String.class);
                 var input = builder.field("input", arg -> arg.input, Input.class);
-                var file = builder.field("file", arg -> arg.file, Boolean.class);
-                var prefix = builder.field("prefix", arg -> arg.prefix, String.class);
-                return values -> new Classpath(values.get(input), values.get(file), values.get(prefix));
+                return values -> new Classpath(values.get(pattern), values.get(input));
             }
         }
     }
@@ -151,10 +186,9 @@ public abstract sealed class Argument {
     public static final class Zip extends Argument {
         public final List<Input> inputs = new ArrayList<>();
         public PathSensitivity pathSensitivity;
-        public String prefix;
-        public String groupPrefix;
 
-        public Zip(List<Input> inputs, PathSensitivity pathSensitivity) {
+        public Zip(@Nullable String pattern, List<Input> inputs, PathSensitivity pathSensitivity) {
+            super(pattern);
             this.inputs.addAll(inputs);
             this.pathSensitivity = pathSensitivity;
         }
@@ -162,16 +196,10 @@ public abstract sealed class Argument {
         private static final class Specialized extends FieldAdapter<Zip> {
             @Override
             public Function<Values, Zip> build(Builder<Zip> builder) {
+                var pattern = builder.field("pattern", arg -> arg.pattern, String.class);
                 var inputs = builder.field("inputs", arg -> arg.inputs, TypeToken.getParameterized(List.class, Input.class).getType());
                 var pathSensitivity = builder.field("pathSensitivity", arg -> arg.pathSensitivity, PathSensitivity.class);
-                var prefix = builder.field("prefix", arg -> arg.prefix, String.class);
-                var groupPrefix = builder.field("groupPrefix", arg -> arg.groupPrefix, String.class);
-                return values -> {
-                    var zip = new Zip(values.get(inputs), values.get(pathSensitivity));
-                    zip.prefix = values.get(prefix);
-                    zip.groupPrefix = values.get(groupPrefix);
-                    return zip;
-                };
+                return values -> new Zip(values.get(pattern), values.get(inputs), values.get(pathSensitivity));
             }
         }
     }

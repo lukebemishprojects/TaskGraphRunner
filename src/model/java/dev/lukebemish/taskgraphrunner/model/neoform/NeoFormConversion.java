@@ -184,8 +184,8 @@ public final class NeoFormConversion {
                         tool.args.add(processArgument(arg, step, source, listLibrariesName));
                     }
 
-                    tool.args.add(new Argument.ValueInput(new Input.DirectInput(new Value.StringValue("-jar"))));
-                    tool.args.add(new Argument.FileInput(new Input.DirectInput(Value.artifact(function.version())), PathSensitivity.NONE));
+                    tool.args.add(new Argument.ValueInput(null, new Input.DirectInput(new Value.StringValue("-jar"))));
+                    tool.args.add(new Argument.FileInput(null, new Input.DirectInput(Value.artifact(function.version())), PathSensitivity.NONE));
 
                     for (var arg : function.args()) {
                         tool.args.add(processArgument(arg, step, source, listLibrariesName));
@@ -220,13 +220,13 @@ public final class NeoFormConversion {
         var recompile = new TaskModel.Compile(
             "recompile",
             List.of(
-                new Argument.ValueInput(new Input.DirectInput(new Value.StringValue("--release"))),
-                new Argument.ValueInput(new Input.DirectInput(new Value.StringValue(source.javaTarget()+""))), // Target the release the neoform config targets
-                new Argument.ValueInput(new Input.DirectInput(new Value.StringValue("-proc:none"))), // No APs in Minecraft's sources
-                new Argument.ValueInput(new Input.DirectInput(new Value.StringValue("-nowarn"))), // We'll handle the diagnostics ourselves
-                new Argument.ValueInput(new Input.DirectInput(new Value.StringValue("-g"))), // Gradle does it...
-                new Argument.ValueInput(new Input.DirectInput(new Value.StringValue("-XDuseUnsharedTable=true"))), // Gradle does it?
-                new Argument.ValueInput(new Input.DirectInput(new Value.StringValue("-implicit:none"))) // If we inject stubs, don't output those
+                new Argument.ValueInput(null, new Input.DirectInput(new Value.StringValue("--release"))),
+                new Argument.ValueInput(null, new Input.DirectInput(new Value.StringValue(source.javaTarget()+""))), // Target the release the neoform config targets
+                new Argument.ValueInput(null, new Input.DirectInput(new Value.StringValue("-proc:none"))), // No APs in Minecraft's sources
+                new Argument.ValueInput(null, new Input.DirectInput(new Value.StringValue("-nowarn"))), // We'll handle the diagnostics ourselves
+                new Argument.ValueInput(null, new Input.DirectInput(new Value.StringValue("-g"))), // Gradle does it...
+                new Argument.ValueInput(null, new Input.DirectInput(new Value.StringValue("-XDuseUnsharedTable=true"))), // Gradle does it?
+                new Argument.ValueInput(null, new Input.DirectInput(new Value.StringValue("-implicit:none"))) // If we inject stubs, don't output those
             ),
             new Input.TaskInput(new Output("jstTransform", "output")),
             new Input.ListInput(List.of(new Input.TaskInput(new Output("jstTransform", "stubs")))),
@@ -241,21 +241,21 @@ public final class NeoFormConversion {
         if (arg.startsWith("{") && arg.endsWith("}")) {
             var name = arg.substring(1, arg.length() - 1);
             return switch (name) {
-                case "libraries" -> new Argument.Classpath(
-                        new Input.TaskInput(new Output(listLibrariesName, "output")),
-                        true,
-                    "-e="
+                case "libraries" -> new Argument.LibrariesFile(
+                    null,
+                    new Input.TaskInput(new Output(listLibrariesName, "output")),
+                    new Input.DirectInput(new Value.StringValue("-e="))
                     );
-                case "version" -> new Argument.ValueInput(new Input.DirectInput(new Value.StringValue(fullConfig.version())));
+                case "version" -> new Argument.ValueInput(null, new Input.DirectInput(new Value.StringValue(fullConfig.version())));
                 // Special-case the output extension for mergeMappings here... NeoForm's format is silly
-                case "output" -> new Argument.FileOutput("output", step.type().equals("mergeMappings") ? "tsrg" : "jar");
+                case "output" -> new Argument.FileOutput(null, "output", step.type().equals("mergeMappings") ? "tsrg" : "jar");
                 default -> {
                     var stepValue = step.values().get(name);
                     if (stepValue != null) {
-                        yield new Argument.FileInput(parseStepInput(step, name), PathSensitivity.NONE);
+                        yield new Argument.FileInput(null, parseStepInput(step, name), PathSensitivity.NONE);
                     } else {
                         var input = new Input.TaskInput(new Output("generated_retrieve_" + name, "output"));
-                        yield new Argument.FileInput(input, PathSensitivity.NONE);
+                        yield new Argument.FileInput(null, input, PathSensitivity.NONE);
                     }
                 }
             };
@@ -264,7 +264,7 @@ public final class NeoFormConversion {
             if (toolArtifactId.startsWith("org.vineflower:vineflower:")) {
                 arg = arg.replace("TRACE", "WARN");
             }
-            return new Argument.ValueInput(new Input.DirectInput(new Value.StringValue(arg)));
+            return new Argument.ValueInput(null, new Input.DirectInput(new Value.StringValue(arg)));
         }
     }
 

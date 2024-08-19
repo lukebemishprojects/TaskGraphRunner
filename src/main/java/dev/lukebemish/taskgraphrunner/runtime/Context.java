@@ -54,4 +54,6 @@ public interface Context {
         }
         return lockManager().locks(keys);
     }
+
+    boolean useCached();
 }

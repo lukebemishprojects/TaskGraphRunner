@@ -19,6 +19,9 @@ public class Run implements Runnable {
     @CommandLine.Parameters(index = "0", description = "Configuration file.")
     Path config;
 
+    @CommandLine.Option(names = "--skip-cache", description = "Avoids using cached results.")
+    boolean skipCache = false;
+
     private final Main main;
 
     Run(Main main) {
@@ -35,7 +38,7 @@ public class Run implements Runnable {
                 parameters.putAll(workItem.parameters);
                 workItem.parameters.clear();
                 workItem.parameters.putAll(parameters);
-                Invocation invocation = new Invocation(main.cacheDir);
+                Invocation invocation = new Invocation(main.cacheDir, !skipCache);
                 for (var manifest : main.artifactManifests) {
                     invocation.artifactManifest(manifest);
                 }

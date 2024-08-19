@@ -19,10 +19,12 @@ public class Invocation implements Context {
 
     private final Map<String, Task> tasks = new HashMap<>();
     private final ArtifactManifest artifactManifest = new ArtifactManifest();
+    private final boolean useCached;
 
-    public Invocation(Path cacheDirectory) throws IOException {
+    public Invocation(Path cacheDirectory, boolean useCached) throws IOException {
         this.cacheDirectory = cacheDirectory;
         this.lockManager = new LockManager(cacheDirectory.resolve("locks"));
+        this.useCached = useCached;
     }
 
     public void addTask(Task task) {
@@ -115,6 +117,11 @@ public class Invocation implements Context {
     @Override
     public LockManager lockManager() {
         return lockManager;
+    }
+
+    @Override
+    public boolean useCached() {
+        return this.useCached;
     }
 
     public void execute(Map<Output, Path> results) {

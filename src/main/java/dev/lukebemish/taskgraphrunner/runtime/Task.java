@@ -95,7 +95,7 @@ public abstract class Task implements RecordedInput {
         } catch (IOException e) {
             throw new UncheckedIOException(e);
         }
-        if (Files.exists(statePath)) {
+        if (context.useCached() && Files.exists(statePath)) {
             try (var reader = Files.newBufferedReader(statePath, StandardCharsets.UTF_8)) {
                 JsonObject existingState = GSON.fromJson(reader, JsonObject.class);
                 JsonElement existingInputState = existingState.get("inputs");
