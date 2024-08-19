@@ -5,11 +5,15 @@ import picocli.CommandLine;
 
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.List;
 
 @CommandLine.Command(name = "taskgraphrunner", mixinStandardHelpOptions = true)
 public class Main {
     @CommandLine.Option(names = "--cache-dir", description = "Where caches should be stored.")
     Path cacheDir = defaultCacheDirectory();
+
+    @CommandLine.Option(names = "--artifact-manifest", description = "Artifact manifest files.", arity = "*")
+    List<Path> artifactManifests = List.of();
 
     public static void main(String[] args) {
         var main = new Main();

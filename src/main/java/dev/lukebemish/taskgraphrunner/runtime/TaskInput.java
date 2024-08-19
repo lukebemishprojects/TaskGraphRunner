@@ -219,27 +219,20 @@ public sealed interface TaskInput extends RecordedInput {
     }
 
     private static Path pathNotation(Context context, String line) {
-        if (line.startsWith("file:")) {
-            return Path.of(line.substring("file:".length()));
-        } else if (line.startsWith("artifact:")) {
-            var notation = line.substring("artifact:".length());
-            return context.findArtifact(notation);
-        } else {
-            throw new IllegalArgumentException("Unknown library line: "+ line);
-        }
+        return context.artifactManifest().resolve(line);
     }
 
-    record SimpleFileListInput(String name, List<FileInput> inputs) implements FileListInput {
+    record SimpleFileListInput(String name, List<HasFileInput> inputs) implements FileListInput {
         @Override
         public void hashReference(ByteConsumer digest, Context context) {
-            for (FileInput input : inputs) {
+            for (HasFileInput input : inputs) {
                 input.hashReference(digest, context);
             }
         }
 
         @Override
         public void hashContents(ByteConsumer digest, Context context) {
-            for (FileInput input : inputs) {
+            for (HasFileInput input : inputs) {
                 input.hashContents(digest, context);
             }
         }
@@ -247,7 +240,7 @@ public sealed interface TaskInput extends RecordedInput {
         @Override
         public JsonElement recordedValue(Context context) {
             JsonArray array = new JsonArray();
-            for (FileInput input : inputs) {
+            for (HasFileInput input : inputs) {
                 array.add(input.recordedValue(context));
             }
             return array;
@@ -282,6 +275,13 @@ public sealed interface TaskInput extends RecordedInput {
             }
             case Input.TaskInput ignored -> throw new IllegalArgumentException("Cannot convert task input to value");
             case Input.DirectInput directInput -> new ValueInput(name, directInput.value());
+            case Input.ListInput listInput -> {
+                List<Value> values = new ArrayList<>();
+                for (int i = 0; i < listInput.inputs().size(); i++) {
+                    values.add(value(name+"_"+i, listInput.inputs().get(i), workItem, null).value());
+                }
+                yield new ValueInput(name, new Value.ListValue(values));
+            }
         };
     }
 
@@ -306,6 +306,7 @@ public sealed interface TaskInput extends RecordedInput {
                 }
                 yield new FileInput(name, pathNotation(context, stringValue.value()), pathSensitivity);
             }
+            case Input.ListInput ignored -> throw new IllegalArgumentException("Cannot create a single file from a list of inputs");
         };
     }
 
@@ -322,6 +323,13 @@ public sealed interface TaskInput extends RecordedInput {
                 yield new LibraryListFileListInput(name, new TaskOutputInput(name, new TaskOutput(taskInput.output().taskName(), taskInput.output().name())));
             }
             case Input.DirectInput directInput -> fileListFromValue(name, context, pathSensitivity, null, directInput.value());
+            case Input.ListInput listInput -> {
+                List<HasFileInput> fileInputs = new ArrayList<>();
+                for (int i = 0; i < listInput.inputs().size(); i++) {
+                    fileInputs.add(file(name + "_" + i, listInput.inputs().get(i), workItem, context, pathSensitivity));
+                }
+                yield new SimpleFileListInput(name, fileInputs);
+            }
         };
     }
 
@@ -329,7 +337,7 @@ public sealed interface TaskInput extends RecordedInput {
         if (value instanceof Value.StringValue stringValue) {
             return new LibraryListFileListInput(name, new FileInput(name, pathNotation(context, stringValue.value()), pathSensitivity));
         } else if (value instanceof Value.ListValue listValue) {
-            List<FileInput> inputs = new ArrayList<>(listValue.value().size());
+            List<HasFileInput> inputs = new ArrayList<>(listValue.value().size());
             for (int i = 0; i < listValue.value().size(); i++) {
                 var singleValue = listValue.value().get(i);
                 if (!(singleValue instanceof Value.StringValue stringValue)) {

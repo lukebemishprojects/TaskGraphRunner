@@ -7,6 +7,8 @@ import com.google.gson.stream.JsonToken;
 import com.google.gson.stream.JsonWriter;
 
 import java.io.IOException;
+import java.util.ArrayList;
+import java.util.List;
 
 final class InputAdapter extends GsonAdapter<Input> {
 
@@ -28,6 +30,13 @@ final class InputAdapter extends GsonAdapter<Input> {
             case Input.ParameterInput parameterInput -> out.value("parameter." + parameterInput.parameter());
             case Input.TaskInput taskInput ->
                 out.value("task." + taskInput.output().taskName() + "." + taskInput.output().name());
+            case Input.ListInput listInput -> {
+                out.beginArray();
+                for (var i : listInput.inputs()) {
+                    write(out, i);
+                }
+                out.endArray();
+            }
         }
     }
 
@@ -53,6 +62,14 @@ final class InputAdapter extends GsonAdapter<Input> {
                 }
                 default -> throw new IllegalArgumentException("Invalid input type: " + prefix);
             };
+        } else if (in.peek() == JsonToken.BEGIN_ARRAY) {
+            List<Input> inputs = new ArrayList<>();
+            in.beginArray();
+            while (in.peek() != JsonToken.END_ARRAY) {
+                inputs.add(read(in));
+            }
+            in.endArray();
+            return new Input.ListInput(inputs);
         }
         JsonObject object = GSON.getAdapter(JsonElement.class).read(in).getAsJsonObject();
         var type = object.get("type").getAsString();
@@ -63,6 +80,13 @@ final class InputAdapter extends GsonAdapter<Input> {
             case "task" -> {
                 var output = GSON.fromJson(value, Output.class);
                 yield new Input.TaskInput(output);
+            }
+            case "list" -> {
+                List<Input> inputs = new ArrayList<>();
+                for (var element : value.getAsJsonArray()) {
+                    inputs.add(GSON.fromJson(element, Input.class));
+                }
+                yield new Input.ListInput(inputs);
             }
             default -> throw new IllegalArgumentException("Invalid input type: " + type);
         };

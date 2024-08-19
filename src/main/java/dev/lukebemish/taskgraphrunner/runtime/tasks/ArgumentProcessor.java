@@ -2,7 +2,6 @@ package dev.lukebemish.taskgraphrunner.runtime.tasks;
 
 import dev.lukebemish.taskgraphrunner.model.Argument;
 import dev.lukebemish.taskgraphrunner.model.PathSensitivity;
-import dev.lukebemish.taskgraphrunner.model.Value;
 import dev.lukebemish.taskgraphrunner.model.WorkItem;
 import dev.lukebemish.taskgraphrunner.runtime.Context;
 import dev.lukebemish.taskgraphrunner.runtime.TaskInput;
@@ -37,7 +36,7 @@ public final class ArgumentProcessor {
                         var input = zip.inputs.get(j);
                         inputs.add(TaskInput.files(name+"zip"+j, input, workItem, context, zip.pathSensitivity));
                     }
-                    yield new Arg.Zip(inputs);
+                    yield new Arg.Zip(inputs, zip.prefix, zip.groupPrefix);
                 }
                 case Argument.FileOutput fileOutput -> {
                     var existing = outputExtensions.get(fileOutput.name);
@@ -98,7 +97,12 @@ public final class ArgumentProcessor {
             public List<String> resolve(Path workingDirectory, String taskName, Context context, int argCount) {
                 if (file) {
                     Path filePath = workingDirectory.resolve("args." + argCount + ".txt");
-                    var content = input.paths(context).stream().map(path -> prefix+path.toAbsolutePath().toString()).collect(Collectors.joining(System.lineSeparator())) + System.lineSeparator();
+                    var content = input.paths(context).stream().map(path -> {
+                        if (prefix == null) {
+                            return path.toAbsolutePath().toString();
+                        }
+                        return prefix + path.toAbsolutePath();
+                    }).collect(Collectors.joining(System.lineSeparator())) + System.lineSeparator();
                     try (var writer = Files.newBufferedWriter(filePath)) {
                         writer.write(content);
                     } catch (IOException e) {
@@ -106,12 +110,16 @@ public final class ArgumentProcessor {
                     }
                     return List.of(filePath.toAbsolutePath().toString());
                 } else {
-                    return List.of(input.paths(context).stream().map(path -> path.toAbsolutePath().toString()).collect(Collectors.joining(File.pathSeparator)));
+                    var content = input.paths(context).stream().map(path -> path.toAbsolutePath().toString()).collect(Collectors.joining(File.pathSeparator));
+                    if (prefix != null) {
+                        content = prefix + content;
+                    }
+                    return List.of(content);
                 }
             }
         }
 
-        record Zip(List<TaskInput.FileListInput> input) implements Arg {
+        record Zip(List<TaskInput.FileListInput> input, String prefix, String groupPrefix) implements Arg {
             @Override
             public Stream<TaskInput> inputs() {
                 return input.stream().map(Function.identity());
@@ -132,8 +140,15 @@ public final class ArgumentProcessor {
                 }
 
                 for (int i = 0; i < length; i++) {
+                    if (groupPrefix != null) {
+                        paths.add(groupPrefix);
+                    }
                     for (var files : lists) {
-                        paths.add(files.get(i).toAbsolutePath().toString());
+                        var content = files.get(i).toAbsolutePath().toString();
+                        if (prefix != null) {
+                            content = prefix + content;
+                        }
+                        paths.add(content);
                     }
                 }
 

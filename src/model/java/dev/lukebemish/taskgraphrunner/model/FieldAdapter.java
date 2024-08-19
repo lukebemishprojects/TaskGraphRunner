@@ -79,6 +79,9 @@ abstract class FieldAdapter<O> extends GsonAdapter<O> {
             }
         }
         public <T> Key<T> field(String name, Function<O, T> getter, Type type) {
+            if (keys.containsKey(name)) {
+                throw new IllegalArgumentException("Field with name `"+name+"` already added");
+            }
             var key = new Key<T>();
             getters.put(key, getter);
             keys.put(name, key);

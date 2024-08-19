@@ -13,15 +13,11 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.HashMap;
-import java.util.List;
 
 @CommandLine.Command(name = "run", mixinStandardHelpOptions = true, description = "Run a task graph")
 public class Run implements Runnable {
     @CommandLine.Parameters(index = "0", description = "Configuration file.")
     Path config;
-
-    @CommandLine.Option(names = "--artifact-manifest", description = "Artifact manifest files.", arity = "*")
-    List<Path> artifactManifests = List.of();
 
     private final Main main;
 
@@ -40,7 +36,7 @@ public class Run implements Runnable {
                 workItem.parameters.clear();
                 workItem.parameters.putAll(parameters);
                 Invocation invocation = new Invocation(main.cacheDir);
-                for (var manifest : artifactManifests) {
+                for (var manifest : main.artifactManifests) {
                     invocation.artifactManifest(manifest);
                 }
                 for (var model : config.tasks) {

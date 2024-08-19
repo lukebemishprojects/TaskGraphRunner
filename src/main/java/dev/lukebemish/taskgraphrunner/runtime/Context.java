@@ -21,6 +21,8 @@ public interface Context {
 
     Path findArtifact(String notation);
 
+    ArtifactManifest artifactManifest();
+
     LockManager lockManager();
 
     private void collectDependencies(Set<String> tasks, Task task, Set<String> visited) {

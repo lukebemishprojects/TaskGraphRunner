@@ -13,6 +13,7 @@ import dev.lukebemish.taskgraphrunner.runtime.tasks.DownloadJsonTask;
 import dev.lukebemish.taskgraphrunner.runtime.tasks.DownloadManifestTask;
 import dev.lukebemish.taskgraphrunner.runtime.tasks.DownloadMappingsTask;
 import dev.lukebemish.taskgraphrunner.runtime.tasks.InjectSourcesTask;
+import dev.lukebemish.taskgraphrunner.runtime.tasks.JstTask;
 import dev.lukebemish.taskgraphrunner.runtime.tasks.ListClasspathTask;
 import dev.lukebemish.taskgraphrunner.runtime.tasks.PatchSourcesTask;
 import dev.lukebemish.taskgraphrunner.runtime.tasks.RetrieveDataTask;
@@ -276,6 +277,7 @@ public abstract class Task implements RecordedInput {
             case TaskModel.PatchSources patchSources -> new PatchSourcesTask(patchSources, workItem, context);
             case TaskModel.RetrieveData retrieveData -> new RetrieveDataTask(retrieveData, workItem, context);
             case TaskModel.Compile compile -> new CompileTask(compile, workItem, context);
+            case TaskModel.Jst jst -> new JstTask(jst, workItem, context);
         };
     }
 

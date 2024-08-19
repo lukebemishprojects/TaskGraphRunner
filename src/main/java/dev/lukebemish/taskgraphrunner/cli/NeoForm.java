@@ -6,6 +6,7 @@ import dev.lukebemish.taskgraphrunner.model.Output;
 import dev.lukebemish.taskgraphrunner.model.Value;
 import dev.lukebemish.taskgraphrunner.model.WorkItem;
 import dev.lukebemish.taskgraphrunner.model.neoform.NeoFormConversion;
+import dev.lukebemish.taskgraphrunner.runtime.ArtifactManifest;
 import picocli.CommandLine;
 
 import java.io.IOException;
@@ -18,8 +19,8 @@ import java.util.List;
 public class NeoForm implements Runnable {
     private final Main main;
 
-    @CommandLine.Parameters(index = "0", description = "NeoForm zip file.")
-    Path zip;
+    @CommandLine.Parameters(index = "0", description = "NeoForm zip file, as artifact:<artifact ID> or file:path form.")
+    String zip;
 
     @CommandLine.Parameters(index = "1", description = "Output config file.")
     Path target;
@@ -27,11 +28,17 @@ public class NeoForm implements Runnable {
     @CommandLine.Option(names = "--distribution", description = "Distribution to extract.", required = true)
     String distribution;
 
-    @CommandLine.Option(names = "--neoform-artifact-id", description = "Maven-style GAV used to reference the neoform zip within the generated file; default to using a file reference.")
-    String selfReference = null;
-
     @CommandLine.Option(names = "--result", arity = "*", description = "Results, as <task>.<output>:<path> pairs, to include in the generated config.")
     List<String> results = List.of();
+
+    @CommandLine.Option(names = "--access-transformer", arity = "*", description = "Access transformer file path, as artifact:<artifact ID> or file:path form.")
+    List<String> accessTransformers = List.of();
+
+    @CommandLine.Option(names = "--interface-injection", arity = "*", description = "Interface injection data file path, as artifact:<artifact ID> or file:path form.")
+    List<String> interfaceInjection = List.of();
+
+    @CommandLine.Option(names = "--parchment-data", description = "Parchment data, as artifact:<artifact ID> or file:path form.")
+    String parchmentData = null;
 
     NeoForm(Main main) {
         this.main = main;
@@ -40,7 +47,22 @@ public class NeoForm implements Runnable {
     @Override
     public void run() {
         try {
-            Config config = NeoFormConversion.convert(zip, distribution, selfReference == null ? Value.file(zip) : Value.artifact(selfReference));
+            var optionsBuilder = NeoFormConversion.Options.builder();
+            if (!accessTransformers.isEmpty()) {
+                optionsBuilder.accessTransformersParameter("accessTransformers");
+            }
+            if (!interfaceInjection.isEmpty()) {
+                optionsBuilder.interfaceInjectionDataParameter("interfaceInjection");
+            }
+            if (parchmentData != null) {
+                optionsBuilder.parchmentDataParameter("parchmentData");
+            }
+            ArtifactManifest manifest = new ArtifactManifest();
+            for (var m : main.artifactManifests) {
+                manifest.artifactManifest(m);
+            }
+            var zipPath = manifest.resolve(zip);
+            Config config = NeoFormConversion.convert(zipPath, distribution, new Value.StringValue(manifest.absolute(zip)), optionsBuilder.build());
             var workItem = new WorkItem();
             for (var result : results) {
                 var split = result.split(":");
@@ -52,6 +74,15 @@ public class NeoForm implements Runnable {
                     throw new IllegalArgumentException("Invalid task output format: " + split[0]);
                 }
                 workItem.results.put(new Output(taskOutput[0], taskOutput[1]), Path.of(split[1]));
+            }
+            if (!accessTransformers.isEmpty()) {
+                workItem.parameters.put("accessTransformers", new Value.ListValue(accessTransformers.stream().map(s -> (Value) new Value.StringValue(manifest.absolute(s))).toList()));
+            }
+            if (!interfaceInjection.isEmpty()) {
+                workItem.parameters.put("interfaceInjection", new Value.ListValue(interfaceInjection.stream().map(s -> (Value) new Value.StringValue(manifest.absolute(s))).toList()));
+            }
+            if (parchmentData != null) {
+                workItem.parameters.put("parchmentData", new Value.StringValue(manifest.absolute(parchmentData)));
             }
             config.workItems.add(workItem);
 

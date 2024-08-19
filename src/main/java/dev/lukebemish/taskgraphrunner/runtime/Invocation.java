@@ -4,8 +4,6 @@ import dev.lukebemish.taskgraphrunner.model.Output;
 import dev.lukebemish.taskgraphrunner.runtime.util.LockManager;
 
 import java.io.IOException;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -13,7 +11,6 @@ import java.util.HashMap;
 import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.Map;
-import java.util.Properties;
 
 public class Invocation implements Context {
     private final Path cacheDirectory;
@@ -21,29 +18,19 @@ public class Invocation implements Context {
     private final LockManager lockManager;
 
     private final Map<String, Task> tasks = new HashMap<>();
-    private final Map<String, Path> artifacts = new HashMap<>();
+    private final ArtifactManifest artifactManifest = new ArtifactManifest();
 
     public Invocation(Path cacheDirectory) throws IOException {
         this.cacheDirectory = cacheDirectory;
         this.lockManager = new LockManager(cacheDirectory.resolve("locks"));
     }
 
-    public void artifactManifest(Path manifest) {
-        try (var reader = Files.newBufferedReader(manifest, StandardCharsets.ISO_8859_1)) {
-            Properties properties = new Properties();
-            properties.load(reader);
-            for (var entry : properties.entrySet()) {
-                var key = entry.getKey().toString();
-                var value = entry.getValue().toString();
-                artifacts.put(key, Path.of(value));
-            }
-        } catch (IOException e) {
-            throw new RuntimeException(e);
-        }
-    }
-
     public void addTask(Task task) {
         tasks.put(task.name(), task);
+    }
+
+    public void artifactManifest(Path manifest) {
+        artifactManifest.artifactManifest(manifest);
     }
 
     @Override
@@ -117,11 +104,12 @@ public class Invocation implements Context {
 
     @Override
     public Path findArtifact(String notation) {
-        var artifact = artifacts.get(notation);
-        if (artifact == null) {
-            throw new IllegalArgumentException("No such artifact `"+notation+"`");
-        }
-        return artifact;
+        return artifactManifest.findArtifact(notation);
+    }
+
+    @Override
+    public ArtifactManifest artifactManifest() {
+        return artifactManifest;
     }
 
     @Override

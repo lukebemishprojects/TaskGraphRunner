@@ -151,6 +151,8 @@ public abstract sealed class Argument {
     public static final class Zip extends Argument {
         public final List<Input> inputs = new ArrayList<>();
         public PathSensitivity pathSensitivity;
+        public String prefix;
+        public String groupPrefix;
 
         public Zip(List<Input> inputs, PathSensitivity pathSensitivity) {
             this.inputs.addAll(inputs);
@@ -162,7 +164,14 @@ public abstract sealed class Argument {
             public Function<Values, Zip> build(Builder<Zip> builder) {
                 var inputs = builder.field("inputs", arg -> arg.inputs, TypeToken.getParameterized(List.class, Input.class).getType());
                 var pathSensitivity = builder.field("pathSensitivity", arg -> arg.pathSensitivity, PathSensitivity.class);
-                return values -> new Zip(values.get(inputs), values.get(pathSensitivity));
+                var prefix = builder.field("prefix", arg -> arg.prefix, String.class);
+                var groupPrefix = builder.field("groupPrefix", arg -> arg.groupPrefix, String.class);
+                return values -> {
+                    var zip = new Zip(values.get(inputs), values.get(pathSensitivity));
+                    zip.prefix = values.get(prefix);
+                    zip.groupPrefix = values.get(groupPrefix);
+                    return zip;
+                };
             }
         }
     }

@@ -8,6 +8,7 @@ import dev.lukebemish.taskgraphrunner.model.Output;
 import dev.lukebemish.taskgraphrunner.model.PathSensitivity;
 import dev.lukebemish.taskgraphrunner.model.TaskModel;
 import dev.lukebemish.taskgraphrunner.model.Value;
+import org.jspecify.annotations.Nullable;
 
 import java.io.IOException;
 import java.io.InputStreamReader;
@@ -21,6 +22,49 @@ import java.util.zip.ZipInputStream;
 public final class NeoFormConversion {
     private NeoFormConversion() {}
 
+    public static final class Options {
+        private final @Nullable String accessTransformersParameter;
+        private final @Nullable String injectedInterfacesParameter;
+        private final @Nullable String parchmentDataParameter;
+
+        private Options(@Nullable String accessTransformersParameter, @Nullable String injectedInterfacesParameter, @Nullable String parchmentDataParameter) {
+            this.accessTransformersParameter = accessTransformersParameter;
+            this.injectedInterfacesParameter = injectedInterfacesParameter;
+            this.parchmentDataParameter = parchmentDataParameter;
+        }
+
+        public static Builder builder() {
+            return new Builder();
+        }
+
+        public static final class Builder {
+            private String accessTransformersParameter = null;
+            private String injectedInterfacesParameter = null;
+            private String parchmentDataParameter = null;
+
+            private Builder() {}
+
+            public Builder accessTransformersParameter(String accessTransformersParameter) {
+                this.accessTransformersParameter = accessTransformersParameter;
+                return this;
+            }
+
+            public Builder interfaceInjectionDataParameter(String injectedInterfacesParameter) {
+                this.injectedInterfacesParameter = injectedInterfacesParameter;
+                return this;
+            }
+
+            public Builder parchmentDataParameter(String parchmentDataParameter) {
+                this.parchmentDataParameter = parchmentDataParameter;
+                return this;
+            }
+
+            public Options build() {
+                return new Options(accessTransformersParameter, injectedInterfacesParameter, parchmentDataParameter);
+            }
+        }
+    }
+
     /**
      * Convert a neoform config zip into a task graph config.
      * @param neoFormConfig the path to the neoform config zip
@@ -28,7 +72,7 @@ public final class NeoFormConversion {
      * @param selfReference how the config zip should be referenced in the generated config
      * @return a new task graph config
      */
-    public static Config convert(Path neoFormConfig, String distribution, Value selfReference) throws IOException {
+    public static Config convert(Path neoFormConfig, String distribution, Value selfReference, Options options) throws IOException {
         NeoFormConfig source = null;
         try (var is = Files.newInputStream(neoFormConfig);
              var zis = new ZipInputStream(is)) {
@@ -153,6 +197,25 @@ public final class NeoFormConversion {
             config.tasks.add(task);
         }
 
+        var jst = new TaskModel.Jst(
+            "jstTransform",
+            List.of(),
+            new Input.TaskInput(new Output("patch", "output")),
+            new Input.TaskInput(new Output(listLibrariesName, "output"))
+        );
+
+        if (options.accessTransformersParameter != null) {
+            jst.accessTransformers = new Input.ParameterInput(options.accessTransformersParameter);
+        }
+        if (options.injectedInterfacesParameter != null) {
+            jst.interfaceInjection = new Input.ParameterInput(options.injectedInterfacesParameter);
+        }
+        if (options.parchmentDataParameter != null) {
+            jst.parchmentData = new Input.ParameterInput(options.parchmentDataParameter);
+        }
+
+        config.tasks.add(jst);
+
         // Make recompile task
         var recompile = new TaskModel.Compile(
             "recompile",
@@ -165,8 +228,8 @@ public final class NeoFormConversion {
                 new Argument.ValueInput(new Input.DirectInput(new Value.StringValue("-XDuseUnsharedTable=true"))), // Gradle does it?
                 new Argument.ValueInput(new Input.DirectInput(new Value.StringValue("-implicit:none"))) // If we inject stubs, don't output those
             ),
-            new Input.TaskInput(new Output("patch", "output")),
-            new Input.DirectInput(new Value.ListValue(List.of())),
+            new Input.TaskInput(new Output("jstTransform", "output")),
+            new Input.ListInput(List.of(new Input.TaskInput(new Output("jstTransform", "stubs")))),
             new Input.TaskInput(new Output(listLibrariesName, "output"))
         );
         config.tasks.add(recompile);

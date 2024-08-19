@@ -57,6 +57,8 @@ public sealed abstract class TaskModel {
             taskTypeNames.put(Tool.class, "tool");
             taskTypes.put("compile", new Compile.Specialized());
             taskTypeNames.put(Compile.class, "compile");
+            taskTypes.put("jst", new Jst.Specialized());
+            taskTypeNames.put(Jst.class, "jst");
 
             TASK_TYPES = Map.copyOf(taskTypes);
             TASK_TYPE_NAMES = Map.copyOf(taskTypeNames);
@@ -85,6 +87,43 @@ public sealed abstract class TaskModel {
                 throw new IllegalArgumentException("Unknown task type `" + type + "`");
             }
             return taskType.fromJsonTree(json);
+        }
+    }
+
+    @JsonAdapter(Adapter.class)
+    public static final class Jst extends TaskModel {
+        public final List<Argument> args = new ArrayList<>();
+        public Input input;
+        public Input classpath;
+        public @Nullable Input accessTransformers = null;
+        public @Nullable Input interfaceInjection = null;
+        public @Nullable Input parchmentData = null;
+
+        public Jst(String name, List<Argument> args, Input input, Input classpath) {
+            super(name);
+            this.args.addAll(args);
+            this.input = input;
+            this.classpath = classpath;
+        }
+
+        private static final class Specialized extends FieldAdapter<Jst> {
+            @Override
+            public Function<Values, Jst> build(Builder<Jst> builder) {
+                var name = builder.field("name", task -> task.name, String.class);
+                var arguments = builder.field("args", task -> task.args, TypeToken.getParameterized(List.class, Argument.class).getType());
+                var input = builder.field("input", task -> task.input, Input.class);
+                var classpath = builder.field("classpath", task -> task.classpath, Input.class);
+                var accessTransformers = builder.field("accessTransformers", task -> task.accessTransformers, Input.class);
+                var interfaceInjection = builder.field("interfaceInjection", task -> task.interfaceInjection, Input.class);
+                var parchmentData = builder.field("parchmentData", task -> task.parchmentData, Input.class);
+                return values -> {
+                    var jst = new Jst(values.get(name), values.get(arguments), values.get(input), values.get(classpath));
+                    jst.accessTransformers = values.get(accessTransformers);
+                    jst.interfaceInjection = values.get(interfaceInjection);
+                    jst.parchmentData = values.get(parchmentData);
+                    return jst;
+                };
+            }
         }
     }
 
