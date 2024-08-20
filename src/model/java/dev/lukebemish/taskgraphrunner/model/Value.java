@@ -29,6 +29,10 @@ public sealed interface Value {
         return new StringValue("artifact:" + notation);
     }
 
+    static Value tool(String toolName) {
+        return new StringValue("tool:" + toolName);
+    }
+
     static StringValue file(Path path) {
         return new StringValue("file:" + path.toAbsolutePath());
     }

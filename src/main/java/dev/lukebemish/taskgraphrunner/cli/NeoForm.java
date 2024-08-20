@@ -40,6 +40,12 @@ public class NeoForm implements Runnable {
     @CommandLine.Option(names = "--parchment-data", description = "Parchment data, as artifact:<artifact ID> or file:path form.")
     String parchmentData = null;
 
+    @CommandLine.Option(names = "--recompile", description = "Whether the game should be recompiled.")
+    boolean recompile = true;
+
+    @CommandLine.Option(names = "--fix-line-numbers", description = "Whether to fix line numbers using vineflower output and patches.")
+    boolean fixLineNumbers = false;
+
     NeoForm(Main main) {
         this.main = main;
     }
@@ -57,6 +63,8 @@ public class NeoForm implements Runnable {
             if (parchmentData != null) {
                 optionsBuilder.parchmentDataParameter("parchmentData");
             }
+            optionsBuilder.recompile(recompile);
+            optionsBuilder.fixLineNumbers(fixLineNumbers);
             ArtifactManifest manifest = new ArtifactManifest();
             for (var m : main.artifactManifests) {
                 manifest.artifactManifest(m);
@@ -67,13 +75,16 @@ public class NeoForm implements Runnable {
             for (var result : results) {
                 var split = result.split(":");
                 if (split.length != 2) {
-                    throw new IllegalArgumentException("Invalid result format: " + result);
+                    throw new IllegalArgumentException("Invalid result format, expected <alias>:<path> or <task>.<output>:path: " + result);
                 }
                 var taskOutput = split[0].split("\\.");
-                if (taskOutput.length != 2) {
-                    throw new IllegalArgumentException("Invalid task output format: " + split[0]);
+                if (taskOutput.length > 2) {
+                    throw new IllegalArgumentException("Invalid result format, expected <alias>:<path> or <task>.<output>:path: " + result);
+                } else if (taskOutput.length == 2) {
+                    workItem.results.put(new WorkItem.Target.OutputTarget(new Output(taskOutput[0], taskOutput[1])), Path.of(split[1]));
+                } else {
+                    workItem.results.put(new WorkItem.Target.AliasTarget(taskOutput[0]), Path.of(split[1]));
                 }
-                workItem.results.put(new Output(taskOutput[0], taskOutput[1]), Path.of(split[1]));
             }
             if (!accessTransformers.isEmpty()) {
                 workItem.parameters.put("accessTransformers", new Value.ListValue(accessTransformers.stream().map(s -> (Value) new Value.StringValue(manifest.absolute(s))).toList()));

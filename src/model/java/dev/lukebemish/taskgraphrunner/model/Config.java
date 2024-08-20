@@ -15,6 +15,7 @@ public final class Config {
     public final List<TaskModel> tasks = new ArrayList<>();
     public final List<WorkItem> workItems = new ArrayList<>();
     public final Map<String, Value> parameters = new HashMap<>();
+    public final Map<String, Output> aliases = new HashMap<>();
 
     static final class Adapter extends GsonAdapter<Config> {
         @Override
@@ -39,6 +40,15 @@ public final class Config {
                 GSON.toJson(entry.getValue(), Value.class, out);
             }
             out.endObject();
+            if (!value.aliases.isEmpty()) {
+                out.name("aliases");
+                out.beginObject();
+                for (Map.Entry<String, Output> entry : value.aliases.entrySet()) {
+                    out.name(entry.getKey());
+                    GSON.getAdapter(Output.class).write(out, entry.getValue());
+                }
+                out.endObject();
+            }
             out.endObject();
         }
 
@@ -73,6 +83,15 @@ public final class Config {
                             config.tasks.add(task);
                         }
                         in.endArray();
+                    }
+                    case "aliases" -> {
+                        in.beginObject();
+                        while (in.hasNext()) {
+                            var key = in.nextName();
+                            var value = GSON.getAdapter(Output.class).read(in);
+                            config.aliases.put(key, value);
+                        }
+                        in.endObject();
                     }
                     default -> {} // ignore unknown fields
                 }

@@ -11,8 +11,13 @@ import java.util.Map;
 
 @JsonAdapter(WorkItem.Adapter.class)
 public final class WorkItem {
-    public final Map<Output, Path> results = new HashMap<>();
+    public final Map<Target, Path> results = new HashMap<>();
     public final Map<String, Value> parameters = new HashMap<>();
+
+    public sealed interface Target {
+        record OutputTarget(Output output) implements Target {}
+        record AliasTarget(String alias) implements Target {}
+    }
 
     static final class Adapter extends GsonAdapter<WorkItem> {
         @Override
@@ -20,8 +25,11 @@ public final class WorkItem {
             out.beginObject();
             out.name("results");
             out.beginObject();
-            for (Map.Entry<Output, Path> entry : value.results.entrySet()) {
-                out.name(entry.getKey().taskName()+"."+entry.getKey().name());
+            for (Map.Entry<Target, Path> entry : value.results.entrySet()) {
+                switch (entry.getKey()) {
+                    case Target.OutputTarget outputTarget -> out.name(outputTarget.output.taskName() + "." + outputTarget.output.name());
+                    case Target.AliasTarget aliasTarget -> out.name(aliasTarget.alias);
+                }
                 out.value(entry.getValue().toAbsolutePath().toString());
             }
             out.endObject();
@@ -48,10 +56,14 @@ public final class WorkItem {
                             var key = in.nextName();
                             var value = in.nextString();
                             var parts = key.split("\\.");
-                            if (parts.length != 2) {
-                                throw new IllegalArgumentException("Invalid output format, expected <task>.<output>: " + key);
+                            if (parts.length > 2) {
+                                throw new IllegalArgumentException("Invalid output format, expected <task>.<output> or <alias>: " + key);
                             }
-                            workItem.results.put(new Output(parts[0], parts[1]), Path.of(value));
+                            if (parts.length == 2) {
+                                workItem.results.put(new Target.OutputTarget(new Output(parts[0], parts[1])), Path.of(value));
+                            } else {
+                                workItem.results.put(new Target.AliasTarget(key), Path.of(value));
+                            }
                         }
                         in.endObject();
                     }

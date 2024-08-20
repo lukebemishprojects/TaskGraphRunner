@@ -15,6 +15,7 @@ import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
@@ -26,11 +27,15 @@ public final class NeoFormConversion {
         private final @Nullable String accessTransformersParameter;
         private final @Nullable String injectedInterfacesParameter;
         private final @Nullable String parchmentDataParameter;
+        private final boolean recompile;
+        private final boolean fixLineNumbers;
 
-        private Options(@Nullable String accessTransformersParameter, @Nullable String injectedInterfacesParameter, @Nullable String parchmentDataParameter) {
+        private Options(@Nullable String accessTransformersParameter, @Nullable String injectedInterfacesParameter, @Nullable String parchmentDataParameter, boolean recompile, boolean fixLineNumbers) {
             this.accessTransformersParameter = accessTransformersParameter;
             this.injectedInterfacesParameter = injectedInterfacesParameter;
             this.parchmentDataParameter = parchmentDataParameter;
+            this.recompile = recompile;
+            this.fixLineNumbers = fixLineNumbers;
         }
 
         public static Builder builder() {
@@ -41,6 +46,8 @@ public final class NeoFormConversion {
             private String accessTransformersParameter = null;
             private String injectedInterfacesParameter = null;
             private String parchmentDataParameter = null;
+            boolean recompile = true;
+            boolean fixLineNumbers = false;
 
             private Builder() {}
 
@@ -59,8 +66,18 @@ public final class NeoFormConversion {
                 return this;
             }
 
+            public Builder recompile(boolean recompile) {
+                this.recompile = recompile;
+                return this;
+            }
+
+            public Builder fixLineNumbers(boolean fixLineNumbers) {
+                this.fixLineNumbers = fixLineNumbers;
+                return this;
+            }
+
             public Options build() {
-                return new Options(accessTransformersParameter, injectedInterfacesParameter, parchmentDataParameter);
+                return new Options(accessTransformersParameter, injectedInterfacesParameter, parchmentDataParameter, recompile, fixLineNumbers);
             }
         }
     }
@@ -125,6 +142,9 @@ public final class NeoFormConversion {
             }
         }
 
+        Output patches = null;
+        Output vineflowerOutput = null;
+
         for (var step : source.steps().getOrDefault(distribution, List.of())) {
             var task = switch (step.type()) {
                 case "downloadManifest" -> new TaskModel.DownloadManifest(step.name());
@@ -168,11 +188,14 @@ public final class NeoFormConversion {
                     parseStepInput(step, "input"),
                     new Input.TaskInput(new Output("generated_retrieve_inject", "output"))
                 );
-                case "patch" -> new TaskModel.PatchSources(
-                    step.name(),
-                    parseStepInput(step, "input"),
-                    new Input.TaskInput(new Output("generated_retrieve_patches", "output"))
-                );
+                case "patch" -> {
+                    patches = new Output("generated_retrieve_patches", "output");
+                    yield new TaskModel.PatchSources(
+                        step.name(),
+                        parseStepInput(step, "input"),
+                        new Input.TaskInput(new Output("generated_retrieve_patches", "output"))
+                    );
+                }
                 default -> {
                     var function = source.functions().get(step.type());
                     if (function == null) {
@@ -191,50 +214,112 @@ public final class NeoFormConversion {
                         tool.args.add(processArgument(arg, step, source, listLibrariesName));
                     }
 
+                    if (isVineflower(function)) {
+                        Output byName = null;
+                        Output otherwise = null;
+                        for (var arg : tool.args) {
+                            if (arg instanceof Argument.FileOutput output) {
+                                if (output.name.equals("output")) {
+                                    byName = new Output(step.name(), "output");
+                                }
+                                otherwise = vineflowerOutput;
+                            }
+                        }
+                        vineflowerOutput = byName == null ? otherwise : byName;
+                    }
+
                     yield tool;
                 }
             };
             config.tasks.add(task);
         }
 
-        var jst = new TaskModel.Jst(
-            "jstTransform",
-            List.of(),
-            List.of(),
-            new Input.TaskInput(new Output("patch", "output")),
-            List.of(new Input.TaskInput(new Output(listLibrariesName, "output"))),
-            null
-        );
+        Output sourcesTask = new Output("patch", "output");
 
-        if (options.accessTransformersParameter != null) {
-            jst.accessTransformers = new Input.ParameterInput(options.accessTransformersParameter);
-        }
-        if (options.injectedInterfacesParameter != null) {
-            jst.interfaceInjection = new Input.ParameterInput(options.injectedInterfacesParameter);
-        }
-        if (options.parchmentDataParameter != null) {
-            jst.parchmentData = new Input.ParameterInput(options.parchmentDataParameter);
+        List<Output> sourcesStubs = new ArrayList<>();
+
+        if (options.accessTransformersParameter != null || options.injectedInterfacesParameter != null || options.parchmentDataParameter != null) {
+            var jst = new TaskModel.Jst(
+                "jstTransform",
+                List.of(),
+                List.of(),
+                new Input.TaskInput(sourcesTask),
+                List.of(new Input.TaskInput(new Output(listLibrariesName, "output"))),
+                null
+            );
+
+            if (options.accessTransformersParameter != null) {
+                jst.accessTransformers = new Input.ParameterInput(options.accessTransformersParameter);
+            }
+            if (options.injectedInterfacesParameter != null) {
+                jst.interfaceInjection = new Input.ParameterInput(options.injectedInterfacesParameter);
+            }
+            if (options.parchmentDataParameter != null) {
+                jst.parchmentData = new Input.ParameterInput(options.parchmentDataParameter);
+            }
+
+            config.tasks.add(jst);
+            sourcesTask = new Output("jstTransform", "output");
+            sourcesStubs.add(new Output("jstTransform", "stubs"));
         }
 
-        config.tasks.add(jst);
+        Output finalBinariesTask = new Output("rename", "output");
+        if (options.recompile) {
+            // Make recompile task
+            var recompile = new TaskModel.Compile(
+                "recompile",
+                List.of(
+                    new Argument.ValueInput(null, new Input.DirectInput(new Value.StringValue("--release"))),
+                    new Argument.ValueInput(null, new Input.DirectInput(new Value.StringValue(source.javaTarget() + ""))), // Target the release the neoform config targets
+                    new Argument.ValueInput(null, new Input.DirectInput(new Value.StringValue("-proc:none"))), // No APs in Minecraft's sources
+                    new Argument.ValueInput(null, new Input.DirectInput(new Value.StringValue("-nowarn"))), // We'll handle the diagnostics ourselves
+                    new Argument.ValueInput(null, new Input.DirectInput(new Value.StringValue("-g"))), // Gradle does it...
+                    new Argument.ValueInput(null, new Input.DirectInput(new Value.StringValue("-XDuseUnsharedTable=true"))), // Gradle does it?
+                    new Argument.ValueInput(null, new Input.DirectInput(new Value.StringValue("-implicit:none"))) // If we inject stubs, don't output those
+                ),
+                new Input.TaskInput(sourcesTask),
+                List.of(new Input.ListInput(
+                    sourcesStubs.stream().map(o -> (Input) new Input.TaskInput(o)).toList()
+                )),
+                List.of(new Input.TaskInput(new Output(listLibrariesName, "output")))
+            );
+            config.tasks.add(recompile);
+            finalBinariesTask = new Output("recompile", "output");
+        }
 
-        // Make recompile task
-        var recompile = new TaskModel.Compile(
-            "recompile",
-            List.of(
-                new Argument.ValueInput(null, new Input.DirectInput(new Value.StringValue("--release"))),
-                new Argument.ValueInput(null, new Input.DirectInput(new Value.StringValue(source.javaTarget()+""))), // Target the release the neoform config targets
-                new Argument.ValueInput(null, new Input.DirectInput(new Value.StringValue("-proc:none"))), // No APs in Minecraft's sources
-                new Argument.ValueInput(null, new Input.DirectInput(new Value.StringValue("-nowarn"))), // We'll handle the diagnostics ourselves
-                new Argument.ValueInput(null, new Input.DirectInput(new Value.StringValue("-g"))), // Gradle does it...
-                new Argument.ValueInput(null, new Input.DirectInput(new Value.StringValue("-XDuseUnsharedTable=true"))), // Gradle does it?
-                new Argument.ValueInput(null, new Input.DirectInput(new Value.StringValue("-implicit:none"))) // If we inject stubs, don't output those
-            ),
-            new Input.TaskInput(new Output("jstTransform", "output")),
-            List.of(new Input.ListInput(List.of(new Input.TaskInput(new Output("jstTransform", "stubs"))))),
-            List.of(new Input.TaskInput(new Output(listLibrariesName, "output")))
-        );
-        config.tasks.add(recompile);
+        if (options.fixLineNumbers) {
+            if (options.recompile) {
+                throw new IllegalArgumentException("Cannot fix line numbers and recompile in the same neoform task graph -- binary output would be ambiguous");
+            }
+
+            var fixLineNumbers = new TaskModel.Tool(
+                "fixLineNumbers",
+                List.of(
+                    new Argument.ValueInput(null, new Input.DirectInput(new Value.StringValue("-jar"))),
+                    new Argument.FileInput(null, new Input.DirectInput(Value.tool("linemapper")), PathSensitivity.NONE),
+                    new Argument.ValueInput(null, new Input.DirectInput(new Value.StringValue("--input"))),
+                    new Argument.FileInput(null, new Input.TaskInput(finalBinariesTask), PathSensitivity.NONE),
+                    new Argument.ValueInput(null, new Input.DirectInput(new Value.StringValue("--output"))),
+                    new Argument.FileOutput(null, "output", "jar")
+                )
+            );
+
+            if (vineflowerOutput != null) {
+                fixLineNumbers.args.add(new Argument.ValueInput(null, new Input.DirectInput(new Value.StringValue("--vineflower"))));
+                fixLineNumbers.args.add(new Argument.FileInput(null, new Input.TaskInput(vineflowerOutput), PathSensitivity.NONE));
+            }
+
+            if (patches != null) {
+                fixLineNumbers.args.add(new Argument.ValueInput(null, new Input.DirectInput(new Value.StringValue("--patches"))));
+                fixLineNumbers.args.add(new Argument.FileInput(null, new Input.TaskInput(patches), PathSensitivity.NONE));
+            }
+
+            config.tasks.add(fixLineNumbers);
+            finalBinariesTask = new Output("fixLineNumbers", "output");
+        }
+
+        config.aliases.put("sources", sourcesTask);
+        config.aliases.put("binary", finalBinariesTask);
 
         return config;
     }
@@ -249,25 +334,32 @@ public final class NeoFormConversion {
                     new Input.DirectInput(new Value.StringValue("-e="))
                     );
                 case "version" -> new Argument.ValueInput(null, new Input.DirectInput(new Value.StringValue(fullConfig.version())));
-                // Special-case the output extension for mergeMappings here... NeoForm's format is silly
-                case "output" -> new Argument.FileOutput(null, "output", step.type().equals("mergeMappings") ? "tsrg" : "jar");
                 default -> {
                     var stepValue = step.values().get(name);
                     if (stepValue != null) {
                         yield new Argument.FileInput(null, parseStepInput(step, name), PathSensitivity.NONE);
                     } else {
-                        var input = new Input.TaskInput(new Output("generated_retrieve_" + name, "output"));
-                        yield new Argument.FileInput(null, input, PathSensitivity.NONE);
+                        if (fullConfig.data().containsKey(name)) {
+                            var input = new Input.TaskInput(new Output("generated_retrieve_" + name, "output"));
+                            yield new Argument.FileInput(null, input, PathSensitivity.NONE);
+                        } else {
+                            // Special-case the output extension for mergeMappings here... NeoForm's format is silly
+                            yield new Argument.FileOutput(null, name, step.type().equals("mergeMappings") ? "tsrg" : "jar");
+                        }
                     }
                 }
             };
         } else {
-            var toolArtifactId = fullConfig.functions().get(step.type()).version();
-            if (toolArtifactId.startsWith("org.vineflower:vineflower:")) {
+            var function = fullConfig.functions().get(step.type());
+            if (isVineflower(function)) {
                 arg = arg.replace("TRACE", "WARN");
             }
             return new Argument.ValueInput(null, new Input.DirectInput(new Value.StringValue(arg)));
         }
+    }
+
+    private static boolean isVineflower(NeoFormFunction function) {
+        return function.version().startsWith("org.vineflower:vineflower:");
     }
 
     private static Input parseStepInput(NeoFormStep step, String inputName) {

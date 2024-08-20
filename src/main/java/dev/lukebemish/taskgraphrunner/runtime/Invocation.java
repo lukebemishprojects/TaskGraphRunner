@@ -127,7 +127,8 @@ public class Invocation implements Context {
     public void execute(Map<Output, Path> results) {
         Map<String, Map<String, Path>> tasks = new LinkedHashMap<>();
         for (var entry : results.entrySet()) {
-            var map = tasks.computeIfAbsent(entry.getKey().taskName(), k -> new LinkedHashMap<>());
+            var taskName = entry.getKey().taskName();
+            var map = tasks.computeIfAbsent(taskName, k -> new LinkedHashMap<>());
             map.put(entry.getKey().name(), entry.getValue());
         }
         try (var ignored = locks(tasks.keySet())) {

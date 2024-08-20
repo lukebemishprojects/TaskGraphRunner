@@ -1,5 +1,7 @@
 package dev.lukebemish.taskgraphrunner.runtime;
 
+import dev.lukebemish.taskgraphrunner.runtime.util.Tools;
+
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -40,6 +42,12 @@ public class ArtifactManifest {
             return "file:"+Path.of(line.substring("file:".length())).toAbsolutePath();
         } else if (line.startsWith("artifact:")) {
             return line;
+        } else if (line.startsWith("tool:")) {
+            if (Tools.tool(line.substring("tool:".length())) == null) {
+                return line;
+            } else {
+                throw new IllegalArgumentException("Unknown tool: "+ line);
+            }
         } else {
             throw new IllegalArgumentException("Unknown library notation: "+ line);
         }
@@ -50,6 +58,13 @@ public class ArtifactManifest {
             return Path.of(line.substring("file:".length()));
         } else if (line.startsWith("artifact:")) {
             var notation = line.substring("artifact:".length());
+            return findArtifact(notation);
+        } else if (line.startsWith("tool:")) {
+            var tool = line.substring("tool:".length());
+            var notation = Tools.tool(tool);
+            if (notation == null) {
+                throw new IllegalArgumentException("Unknown tool: "+ tool);
+            }
             return findArtifact(notation);
         } else {
             throw new IllegalArgumentException("Unknown library notation: "+ line);
