@@ -238,14 +238,18 @@ public final class NeoFormConversion {
 
         List<Output> sourcesStubs = new ArrayList<>();
 
-        if (options.accessTransformersParameter != null || options.injectedInterfacesParameter != null || options.parchmentDataParameter != null) {
+        boolean useJst = options.accessTransformersParameter != null || options.injectedInterfacesParameter != null || options.parchmentDataParameter != null;
+        if (useJst) {
             var jst = new TaskModel.Jst(
                 "jstTransform",
                 List.of(),
-                List.of(),
+                List.of(
+                    new Argument.ValueInput(null, new Input.DirectInput(new Value.StringValue("--enable-linemapper"))),
+                    new Argument.FileOutput(null, "linemap", "txt")
+                ),
                 new Input.TaskInput(sourcesTask),
                 List.of(new Input.TaskInput(new Output(listLibrariesName, "output"))),
-                null
+                List.of(new Input.DirectInput(Value.tool("linemapper-jst")))
             );
 
             if (options.accessTransformersParameter != null) {
@@ -312,6 +316,11 @@ public final class NeoFormConversion {
             if (patches != null) {
                 fixLineNumbers.args.add(new Argument.ValueInput(null, new Input.DirectInput(new Value.StringValue("--patches"))));
                 fixLineNumbers.args.add(new Argument.FileInput(null, new Input.TaskInput(patches), PathSensitivity.NONE));
+            }
+
+            if (useJst) {
+                fixLineNumbers.args.add(new Argument.ValueInput(null, new Input.DirectInput(new Value.StringValue("--linemap"))));
+                fixLineNumbers.args.add(new Argument.FileInput(null, new Input.TaskInput(new Output("jstTransform", "linemap")), PathSensitivity.NONE));
             }
 
             config.tasks.add(fixLineNumbers);

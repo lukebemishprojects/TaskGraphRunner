@@ -7,6 +7,7 @@ import dev.lukebemish.taskgraphrunner.model.Value;
 import dev.lukebemish.taskgraphrunner.model.WorkItem;
 import dev.lukebemish.taskgraphrunner.model.neoform.NeoFormConversion;
 import dev.lukebemish.taskgraphrunner.runtime.ArtifactManifest;
+import org.jspecify.annotations.Nullable;
 import picocli.CommandLine;
 
 import java.io.IOException;
@@ -28,7 +29,7 @@ public class NeoForm implements Runnable {
     @CommandLine.Option(names = "--distribution", description = "Distribution to extract.", required = true)
     String distribution;
 
-    @CommandLine.Option(names = "--result", arity = "*", description = "Results, as <task>.<output>:<path> pairs, to include in the generated config.")
+    @CommandLine.Option(names = "--result", arity = "*", description = "Results, as <task>.<output>:<path> or <alias>:<path> pairs, to include in the generated config.")
     List<String> results = List.of();
 
     @CommandLine.Option(names = "--access-transformer", arity = "*", description = "Access transformer file path, as artifact:<artifact ID> or file:path form.")
@@ -44,7 +45,7 @@ public class NeoForm implements Runnable {
     boolean recompile = true;
 
     @CommandLine.Option(names = "--fix-line-numbers", description = "Whether to fix line numbers using vineflower output and patches.")
-    boolean fixLineNumbers = false;
+    @Nullable Boolean fixLineNumbers;
 
     NeoForm(Main main) {
         this.main = main;
@@ -64,7 +65,7 @@ public class NeoForm implements Runnable {
                 optionsBuilder.parchmentDataParameter("parchmentData");
             }
             optionsBuilder.recompile(recompile);
-            optionsBuilder.fixLineNumbers(fixLineNumbers);
+            optionsBuilder.fixLineNumbers(fixLineNumbers == null ? !recompile : fixLineNumbers);
             ArtifactManifest manifest = new ArtifactManifest();
             for (var m : main.artifactManifests) {
                 manifest.artifactManifest(m);

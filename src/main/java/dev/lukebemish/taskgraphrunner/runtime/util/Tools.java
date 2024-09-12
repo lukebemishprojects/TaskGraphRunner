@@ -10,6 +10,8 @@ public final class Tools {
 
     public static final String JST;
     public static final String DIFF_PATCH;
+    public static final String LINEMAPPER;
+    public static final String LINEMAPPER_JST;
 
     private static final Map<String, String> TOOLS;
 
@@ -29,6 +31,8 @@ public final class Tools {
         TOOLS = Map.copyOf(tools);
         JST = properties.getProperty("jst");
         DIFF_PATCH = properties.getProperty("diffpatch");
+        LINEMAPPER = properties.getProperty("linemapper");
+        LINEMAPPER_JST = properties.getProperty("linemapper-jst");
     }
 
     public static String tool(String tool) {
