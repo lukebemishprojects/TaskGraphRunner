@@ -57,6 +57,8 @@ public sealed abstract class TaskModel {
             taskTypeNames.put(Tool.class, "tool");
             taskTypes.put("compile", new Compile.Specialized());
             taskTypeNames.put(Compile.class, "compile");
+            taskTypes.put("interfaceInjection", new InterfaceInjection.Specialized());
+            taskTypeNames.put(InterfaceInjection.class, "interfaceInjection");
             taskTypes.put("jst", new Jst.Specialized());
             taskTypeNames.put(Jst.class, "jst");
 
@@ -87,6 +89,31 @@ public sealed abstract class TaskModel {
                 throw new IllegalArgumentException("Unknown task type `" + type + "`");
             }
             return taskType.fromJsonTree(json);
+        }
+    }
+
+    @JsonAdapter(Adapter.class)
+    public static final class InterfaceInjection extends TaskModel {
+        public Input input;
+        public Input interfaceInjection;
+        public final List<Input> classpath = new ArrayList<>();
+
+        public InterfaceInjection(String name, Input input, Input interfaceInjection, List<Input> classpath) {
+            super(name);
+            this.input = input;
+            this.interfaceInjection = interfaceInjection;
+            this.classpath.addAll(classpath);
+        }
+
+        private static final class Specialized extends FieldAdapter<InterfaceInjection> {
+            @Override
+            public Function<Values, InterfaceInjection> build(Builder<InterfaceInjection> builder) {
+                var name = builder.field("name", task -> task.name, String.class);
+                var input = builder.field("input", task -> task.input, Input.class);
+                var interfaceInjection = builder.field("interfaceInjection", task -> task.interfaceInjection, Input.class);
+                var classpath = builder.field("classpath", task -> task.classpath, TypeToken.getParameterized(List.class, Input.class).getType());
+                return values -> new InterfaceInjection(values.get(name), values.get(input), values.get(interfaceInjection), values.get(classpath));
+            }
         }
     }
 

@@ -12,6 +12,7 @@ public final class Tools {
     public static final String DIFF_PATCH;
     public static final String LINEMAPPER;
     public static final String LINEMAPPER_JST;
+    public static final String ACCESSTRANSFORMERS;
 
     private static final Map<String, String> TOOLS;
 
@@ -33,6 +34,7 @@ public final class Tools {
         DIFF_PATCH = properties.getProperty("diffpatch");
         LINEMAPPER = properties.getProperty("linemapper");
         LINEMAPPER_JST = properties.getProperty("linemapper-jst");
+        ACCESSTRANSFORMERS = properties.getProperty("accesstransformers");
     }
 
     public static String tool(String tool) {

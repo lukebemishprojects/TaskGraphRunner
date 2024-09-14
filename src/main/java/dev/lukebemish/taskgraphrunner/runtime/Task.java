@@ -13,6 +13,7 @@ import dev.lukebemish.taskgraphrunner.runtime.tasks.DownloadJsonTask;
 import dev.lukebemish.taskgraphrunner.runtime.tasks.DownloadManifestTask;
 import dev.lukebemish.taskgraphrunner.runtime.tasks.DownloadMappingsTask;
 import dev.lukebemish.taskgraphrunner.runtime.tasks.InjectSourcesTask;
+import dev.lukebemish.taskgraphrunner.runtime.tasks.InterfaceInjectionTask;
 import dev.lukebemish.taskgraphrunner.runtime.tasks.JstTask;
 import dev.lukebemish.taskgraphrunner.runtime.tasks.ListClasspathTask;
 import dev.lukebemish.taskgraphrunner.runtime.tasks.PatchSourcesTask;
@@ -60,6 +61,10 @@ public abstract class Task implements RecordedInput {
     private boolean executed;
     private boolean running;
 
+    protected int cacheVersion() {
+        return 1;
+    }
+
     synchronized void execute(Context context, Map<String, Path> outputDestinations) {
         // This operation is NOT locked; locking is handled for a full invocation execution instead
         execute(context);
@@ -74,78 +79,81 @@ public abstract class Task implements RecordedInput {
     }
 
     private synchronized void execute(Context context) {
-        // This operation is NOT locked; locking is handled for a full invocation execution instead
-
-        if (executed) {
-            return;
-        }
-        if (running) {
-            throw new IllegalStateException("Task `"+name+"` has a circular dependency");
-        }
-        running = true;
-        // Run prerequisite tasks
-        inputs().parallelStream().forEach(input ->
-            input.dependencies().parallelStream().forEach(dependency ->
-                context.getTask(dependency).execute(context)
-            )
-        );
-        var statePath = context.taskStatePath(name());
         try {
-            Files.createDirectories(statePath.getParent());
-        } catch (IOException e) {
-            throw new UncheckedIOException(e);
-        }
-        if (context.useCached() && Files.exists(statePath)) {
-            try (var reader = Files.newBufferedReader(statePath, StandardCharsets.UTF_8)) {
-                JsonObject existingState = GSON.fromJson(reader, JsonObject.class);
-                JsonElement existingInputState = existingState.get("inputs");
-                var targetHashes = existingState.get("hashes").getAsJsonObject();
-                var lastExecutedJson = existingState.get("lastExecuted");
-                long lastExecuted = 0;
-                if (lastExecutedJson != null) {
-                    lastExecuted = lastExecutedJson.getAsLong();
-                }
-                boolean allOutputsMatch = true;
-                for (var output : outputTypes().keySet()) {
-                    var oldHashElement = targetHashes.get(output);
-                    if (oldHashElement == null || !oldHashElement.isJsonPrimitive() || !oldHashElement.getAsJsonPrimitive().isString()) {
-                        allOutputsMatch = false;
-                        break;
-                    }
-                    var oldHash = oldHashElement.getAsString();
-                    var outputPath = context.taskOutputPath(name(), output);
-                    if (!Files.exists(outputPath)) {
-                        allOutputsMatch = false;
-                        break;
-                    }
-                    var hash = HashUtils.hash(outputPath);
-                    if (!hash.equals(oldHash)) {
-                        allOutputsMatch = false;
-                        break;
-                    }
-                }
-                if (allOutputsMatch && upToDate(lastExecuted, context)) {
-                    JsonElement newInputState = recordedValue(context);
-                    if (newInputState.equals(existingInputState)) {
-                        updateState(existingState, context);
-                        executed = true;
-                        running = false;
-                        LOGGER.info("Task `"+name+"` is up-to-date.");
-                        return;
-                    }
-                }
-            } catch (Exception e) {
-                // something went wrong -- let's log it, then keep going:
-                // TODO: log it
+            // This operation is NOT locked; locking is handled for a full invocation execution instead
+            if (executed) {
+                return;
             }
+            if (running) {
+                throw new IllegalStateException("Task `" + name + "` has a circular dependency");
+            }
+            running = true;
+            // Run prerequisite tasks
+            inputs().parallelStream().forEach(input ->
+                input.dependencies().parallelStream().forEach(dependency ->
+                    context.getTask(dependency).execute(context)
+                )
+            );
+            var statePath = context.taskStatePath(name());
+            try {
+                Files.createDirectories(statePath.getParent());
+            } catch (IOException e) {
+                throw new UncheckedIOException(e);
+            }
+            if (context.useCached() && Files.exists(statePath)) {
+                try (var reader = Files.newBufferedReader(statePath, StandardCharsets.UTF_8)) {
+                    JsonObject existingState = GSON.fromJson(reader, JsonObject.class);
+                    JsonElement existingInputState = existingState.get("inputs");
+                    var targetHashes = existingState.get("hashes").getAsJsonObject();
+                    var lastExecutedJson = existingState.get("lastExecuted");
+                    long lastExecuted = 0;
+                    if (lastExecutedJson != null) {
+                        lastExecuted = lastExecutedJson.getAsLong();
+                    }
+                    boolean allOutputsMatch = true;
+                    for (var output : outputTypes().keySet()) {
+                        var oldHashElement = targetHashes.get(output);
+                        if (oldHashElement == null || !oldHashElement.isJsonPrimitive() || !oldHashElement.getAsJsonPrimitive().isString()) {
+                            allOutputsMatch = false;
+                            break;
+                        }
+                        var oldHash = oldHashElement.getAsString();
+                        var outputPath = context.taskOutputPath(name(), output);
+                        if (!Files.exists(outputPath)) {
+                            allOutputsMatch = false;
+                            break;
+                        }
+                        var hash = HashUtils.hash(outputPath);
+                        if (!hash.equals(oldHash)) {
+                            allOutputsMatch = false;
+                            break;
+                        }
+                    }
+                    if (allOutputsMatch && upToDate(lastExecuted, context)) {
+                        JsonElement newInputState = recordedValue(context);
+                        if (newInputState.equals(existingInputState)) {
+                            updateState(existingState, context);
+                            executed = true;
+                            running = false;
+                            LOGGER.info("Task `" + name + "` is up-to-date.");
+                            return;
+                        }
+                    }
+                } catch (Exception e) {
+                    // something went wrong -- let's log it, then keep going:
+                    // TODO: log it
+                }
+            }
+            // Something was not up-to-date -- so we run everything
+            LOGGER.info("Starting task `" + name + "`.");
+            run(context);
+            saveState(context);
+            LOGGER.info("Finished task `" + name + "`.");
+            executed = true;
+            running = false;
+        } catch (Exception e) {
+            throw new RuntimeException("Exception in task "+name(),e);
         }
-        // Something was not up-to-date -- so we run everything
-        LOGGER.info("Starting task `"+name+"`.");
-        run(context);
-        saveState(context);
-        LOGGER.info("Finished task `"+name+"`.");
-        executed = true;
-        running = false;
     }
 
     private void updateState(JsonObject oldState, Context context) {
@@ -194,8 +202,9 @@ public abstract class Task implements RecordedInput {
                 if (referenceHash == null) {
                     var stream = new ByteArrayOutputStream();
                     var consumer = ByteConsumer.of(stream);
-                    consumer.update(name().getBytes(StandardCharsets.UTF_8));
                     consumer.update(getClass().getName().getBytes(StandardCharsets.UTF_8));
+                    consumer.update(((Integer) cacheVersion()).byteValue());
+                    consumer.update(name().getBytes(StandardCharsets.UTF_8));
                     for (TaskInput input : inputs()) {
                         consumer.update(input.name().getBytes(StandardCharsets.UTF_8));
                         input.hashReference(consumer, context);
@@ -214,8 +223,9 @@ public abstract class Task implements RecordedInput {
                 if (contentsHash == null) {
                     var stream = new ByteArrayOutputStream();
                     var consumer = ByteConsumer.of(stream);
-                    consumer.update(name().getBytes(StandardCharsets.UTF_8));
                     consumer.update(getClass().getName().getBytes(StandardCharsets.UTF_8));
+                    consumer.update(((Integer) cacheVersion()).byteValue());
+                    consumer.update(name().getBytes(StandardCharsets.UTF_8));
                     for (TaskInput input : inputs()) {
                         for (var dependency : input.dependencies()) {
                             if (!context.getTask(dependency).executed) {
@@ -235,8 +245,8 @@ public abstract class Task implements RecordedInput {
     @Override
     public JsonElement recordedValue(Context context) {
         JsonObject state = new JsonObject();
-        state.addProperty("name", name());
         state.addProperty("type", getClass().getName());
+        state.addProperty("cacheVersion", cacheVersion());
         JsonObject inputs = new JsonObject();
         for (TaskInput input : inputs()) {
             JsonObject inputObject = new JsonObject();
@@ -277,6 +287,7 @@ public abstract class Task implements RecordedInput {
             case TaskModel.PatchSources patchSources -> new PatchSourcesTask(patchSources, workItem, context);
             case TaskModel.RetrieveData retrieveData -> new RetrieveDataTask(retrieveData, workItem, context);
             case TaskModel.Compile compile -> new CompileTask(compile, workItem, context);
+            case TaskModel.InterfaceInjection interfaceInjection -> new InterfaceInjectionTask(interfaceInjection, workItem, context);
             case TaskModel.Jst jst -> new JstTask(jst, workItem, context);
         };
     }

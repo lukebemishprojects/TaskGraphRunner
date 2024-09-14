@@ -245,11 +245,11 @@ public final class NeoFormConversion {
                 List.of(),
                 List.of(
                     new Argument.ValueInput(null, new Input.DirectInput(new Value.StringValue("--enable-linemapper"))),
-                    new Argument.FileOutput(null, "linemap", "txt")
+                    new Argument.FileOutput("--line-map-out={}", "linemap", "txt")
                 ),
                 new Input.TaskInput(sourcesTask),
                 List.of(new Input.TaskInput(new Output(listLibrariesName, "output"))),
-                List.of(new Input.DirectInput(Value.tool("linemapper-jst")))
+                List.of(new Input.ListInput(List.of(new Input.DirectInput(Value.tool("linemapper-jst")))))
             );
 
             if (options.accessTransformersParameter != null) {
@@ -291,6 +291,17 @@ public final class NeoFormConversion {
             finalBinariesTask = new Output("recompile", "output");
         }
 
+        if (!options.recompile && options.injectedInterfacesParameter != null) {
+            var injectInterfaces = new TaskModel.InterfaceInjection(
+                "interfaceInjection",
+                new Input.TaskInput(finalBinariesTask),
+                new Input.ParameterInput(options.injectedInterfacesParameter),
+                List.of(new Input.TaskInput(new Output(listLibrariesName, "output")))
+            );
+            config.tasks.add(injectInterfaces);
+            finalBinariesTask = new Output("interfaceInjection", "output");
+        }
+
         if (options.fixLineNumbers) {
             if (options.recompile) {
                 throw new IllegalArgumentException("Cannot fix line numbers and recompile in the same neoform task graph -- binary output would be ambiguous");
@@ -309,18 +320,15 @@ public final class NeoFormConversion {
             );
 
             if (vineflowerOutput != null) {
-                fixLineNumbers.args.add(new Argument.ValueInput(null, new Input.DirectInput(new Value.StringValue("--vineflower"))));
-                fixLineNumbers.args.add(new Argument.FileInput(null, new Input.TaskInput(vineflowerOutput), PathSensitivity.NONE));
+                fixLineNumbers.args.add(new Argument.FileInput("--vineflower={}", new Input.TaskInput(vineflowerOutput), PathSensitivity.NONE));
             }
 
             if (patches != null) {
-                fixLineNumbers.args.add(new Argument.ValueInput(null, new Input.DirectInput(new Value.StringValue("--patches"))));
-                fixLineNumbers.args.add(new Argument.FileInput(null, new Input.TaskInput(patches), PathSensitivity.NONE));
+                fixLineNumbers.args.add(new Argument.FileInput("--patches={}", new Input.TaskInput(patches), PathSensitivity.NONE));
             }
 
             if (useJst) {
-                fixLineNumbers.args.add(new Argument.ValueInput(null, new Input.DirectInput(new Value.StringValue("--linemap"))));
-                fixLineNumbers.args.add(new Argument.FileInput(null, new Input.TaskInput(new Output("jstTransform", "linemap")), PathSensitivity.NONE));
+                fixLineNumbers.args.add(new Argument.FileInput("--line-maps={}", new Input.TaskInput(new Output("jstTransform", "linemap")), PathSensitivity.NONE));
             }
 
             config.tasks.add(fixLineNumbers);

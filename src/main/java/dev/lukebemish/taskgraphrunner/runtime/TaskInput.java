@@ -186,7 +186,7 @@ public sealed interface TaskInput extends RecordedInput {
         @Override
         public List<Path> paths(Context context) {
             try (var reader = Files.newBufferedReader(libraryFile.path(context))) {
-                return reader.lines().map(line -> pathNotation(context, line)).collect(Collectors.toList());
+                return reader.lines().map(line -> pathNotation(context, line)).toList();
             } catch (IOException e) {
                 throw new UncheckedIOException(e);
             }
