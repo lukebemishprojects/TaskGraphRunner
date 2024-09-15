@@ -1,8 +1,9 @@
-package dev.lukebemish.taskgraphrunner.model.neoform;
+package dev.lukebemish.taskgraphrunner.model.conversion;
 
 import com.google.gson.Gson;
 import dev.lukebemish.taskgraphrunner.model.Argument;
 import dev.lukebemish.taskgraphrunner.model.Config;
+import dev.lukebemish.taskgraphrunner.model.Distribution;
 import dev.lukebemish.taskgraphrunner.model.Input;
 import dev.lukebemish.taskgraphrunner.model.Output;
 import dev.lukebemish.taskgraphrunner.model.PathSensitivity;
@@ -17,11 +18,12 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 
-public final class NeoFormConversion {
-    private NeoFormConversion() {}
+public final class NeoFormGenerator {
+    private NeoFormGenerator() {}
 
     public static final class Options {
         private final @Nullable String accessTransformersParameter;
@@ -29,13 +31,15 @@ public final class NeoFormConversion {
         private final @Nullable String parchmentDataParameter;
         private final boolean recompile;
         private final boolean fixLineNumbers;
+        private final Distribution distribution;
 
-        private Options(@Nullable String accessTransformersParameter, @Nullable String injectedInterfacesParameter, @Nullable String parchmentDataParameter, boolean recompile, boolean fixLineNumbers) {
+        private Options(@Nullable String accessTransformersParameter, @Nullable String injectedInterfacesParameter, @Nullable String parchmentDataParameter, boolean recompile, boolean fixLineNumbers, Distribution distribution) {
             this.accessTransformersParameter = accessTransformersParameter;
             this.injectedInterfacesParameter = injectedInterfacesParameter;
             this.parchmentDataParameter = parchmentDataParameter;
             this.recompile = recompile;
             this.fixLineNumbers = fixLineNumbers;
+            this.distribution = distribution;
         }
 
         public static Builder builder() {
@@ -46,8 +50,9 @@ public final class NeoFormConversion {
             private String accessTransformersParameter = null;
             private String injectedInterfacesParameter = null;
             private String parchmentDataParameter = null;
-            boolean recompile = true;
-            boolean fixLineNumbers = false;
+            private boolean recompile = true;
+            private boolean fixLineNumbers = false;
+            private Distribution distribution = Distribution.JOINED;
 
             private Builder() {}
 
@@ -76,8 +81,13 @@ public final class NeoFormConversion {
                 return this;
             }
 
+            public Builder distribution(Distribution distribution) {
+                this.distribution = distribution;
+                return this;
+            }
+
             public Options build() {
-                return new Options(accessTransformersParameter, injectedInterfacesParameter, parchmentDataParameter, recompile, fixLineNumbers);
+                return new Options(accessTransformersParameter, injectedInterfacesParameter, parchmentDataParameter, recompile, fixLineNumbers, distribution);
             }
         }
     }
@@ -85,11 +95,10 @@ public final class NeoFormConversion {
     /**
      * Convert a neoform config zip into a task graph config.
      * @param neoFormConfig the path to the neoform config zip
-     * @param distribution the distribution of the config to extract
      * @param selfReference how the config zip should be referenced in the generated config
      * @return a new task graph config
      */
-    public static Config convert(Path neoFormConfig, String distribution, Value selfReference, Options options) throws IOException {
+    public static Config convert(Path neoFormConfig, Value selfReference, Options options) throws IOException {
         NeoFormConfig source = null;
         try (var is = Files.newInputStream(neoFormConfig);
              var zis = new ZipInputStream(is)) {
@@ -101,6 +110,9 @@ public final class NeoFormConversion {
                 }
             }
         }
+
+        String distribution = options.distribution.name().toLowerCase(Locale.ROOT);
+
         if (source == null) {
             throw new IllegalArgumentException("No config.json found in provided neoform config zip");
         }
@@ -132,12 +144,14 @@ public final class NeoFormConversion {
         var downloadManifestName = "downloadManifest";
         var downloadJsonName = "downloadJson";
         var listLibrariesName = "listLibraries";
+        var stripTasks = new ArrayList<String>();
 
         for (var step : source.steps().getOrDefault(distribution, List.of())) {
             switch (step.type()) {
                 case "downloadManifest" -> downloadManifestName = step.name();
                 case "downloadJson" -> downloadJsonName = step.name();
                 case "listLibraries" -> listLibrariesName = step.name();
+                case "strip" -> stripTasks.add(step.name());
                 default -> {}
             }
         }
@@ -185,8 +199,10 @@ public final class NeoFormConversion {
                 );
                 case "inject" -> new TaskModel.InjectSources(
                     step.name(),
-                    parseStepInput(step, "input"),
-                    new Input.TaskInput(new Output("generated_retrieve_inject", "output"))
+                    List.of(
+                        parseStepInput(step, "input"),
+                        new Input.TaskInput(new Output("generated_retrieve_inject", "output"))
+                    )
                 );
                 case "patch" -> {
                     patches = new Output("generated_retrieve_patches", "output");
@@ -267,7 +283,7 @@ public final class NeoFormConversion {
             sourcesStubs.add(new Output("jstTransform", "stubs"));
         }
 
-        Output finalBinariesTask = new Output("rename", "output");
+        Output binariesTask = new Output("rename", "output");
         if (options.recompile) {
             // Make recompile task
             var recompile = new TaskModel.Compile(
@@ -288,18 +304,18 @@ public final class NeoFormConversion {
                 List.of(new Input.TaskInput(new Output(listLibrariesName, "output")))
             );
             config.tasks.add(recompile);
-            finalBinariesTask = new Output("recompile", "output");
+            binariesTask = new Output("recompile", "output");
         }
 
         if (!options.recompile && options.injectedInterfacesParameter != null) {
             var injectInterfaces = new TaskModel.InterfaceInjection(
                 "interfaceInjection",
-                new Input.TaskInput(finalBinariesTask),
+                new Input.TaskInput(binariesTask),
                 new Input.ParameterInput(options.injectedInterfacesParameter),
                 List.of(new Input.TaskInput(new Output(listLibrariesName, "output")))
             );
             config.tasks.add(injectInterfaces);
-            finalBinariesTask = new Output("interfaceInjection", "output");
+            binariesTask = new Output("interfaceInjection", "output");
         }
 
         if (options.fixLineNumbers) {
@@ -313,7 +329,7 @@ public final class NeoFormConversion {
                     new Argument.ValueInput(null, new Input.DirectInput(new Value.StringValue("-jar"))),
                     new Argument.FileInput(null, new Input.DirectInput(Value.tool("linemapper")), PathSensitivity.NONE),
                     new Argument.ValueInput(null, new Input.DirectInput(new Value.StringValue("--input"))),
-                    new Argument.FileInput(null, new Input.TaskInput(finalBinariesTask), PathSensitivity.NONE),
+                    new Argument.FileInput(null, new Input.TaskInput(binariesTask), PathSensitivity.NONE),
                     new Argument.ValueInput(null, new Input.DirectInput(new Value.StringValue("--output"))),
                     new Argument.FileOutput(null, "output", "jar")
                 )
@@ -332,11 +348,18 @@ public final class NeoFormConversion {
             }
 
             config.tasks.add(fixLineNumbers);
-            finalBinariesTask = new Output("fixLineNumbers", "output");
+            binariesTask = new Output("fixLineNumbers", "output");
         }
 
         config.aliases.put("sources", sourcesTask);
-        config.aliases.put("binary", finalBinariesTask);
+        config.aliases.put("binary", binariesTask);
+
+        // merge resources
+        config.tasks.add(new TaskModel.InjectSources(
+            "mergedResources",
+            stripTasks.stream().<Input>map(s -> new Input.TaskInput(new Output(s, "output"))).toList()
+        ));
+        config.aliases.put("resources", new Output("mergedResources", "resources"));
 
         return config;
     }

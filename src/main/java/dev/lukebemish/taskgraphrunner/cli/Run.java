@@ -53,9 +53,7 @@ public class Run implements Runnable {
                 workItem.parameters.clear();
                 workItem.parameters.putAll(parameters);
                 Invocation invocation = new Invocation(main.cacheDir, !skipCache);
-                for (var manifest : main.artifactManifests) {
-                    invocation.artifactManifest(manifest);
-                }
+                invocation.artifactManifest(main.makeManifest());
                 for (var model : config.tasks) {
                     var task = Task.task(model, workItem, invocation);
                     invocation.addTask(task);

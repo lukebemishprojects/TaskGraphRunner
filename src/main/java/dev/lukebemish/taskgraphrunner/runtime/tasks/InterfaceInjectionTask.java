@@ -23,8 +23,10 @@ import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.jar.JarInputStream;
 import java.util.jar.JarOutputStream;
 import java.util.zip.ZipEntry;
@@ -54,7 +56,10 @@ public class InterfaceInjectionTask extends Task {
 
     @Override
     public Map<String, String> outputTypes() {
-        return Map.of("output", "jar");
+        return Map.of(
+            "output", "jar",
+            "stubs", "jar"
+        );
     }
 
     private record InjectionData(String interfaceBinaryName, @Nullable String signature) {}
@@ -159,11 +164,12 @@ public class InterfaceInjectionTask extends Task {
         return tokens;
     }
 
-    private static void readTypeArguments(StringBuilder signatureBuilder, NonLoadingClassLoader classFinder, ArrayDeque<Token> tokens) {
+    private static int readTypeArguments(StringBuilder signatureBuilder, NonLoadingClassLoader classFinder, ArrayDeque<Token> tokens) {
         // basically just converts
         // https://docs.oracle.com/javase/specs/jls/se21/html/jls-4.html#jls-TypeArguments
         // to
         // https://docs.oracle.com/javase/specs/jvms/se21/html/jvms-4.html#jvms-TypeArguments
+        int parameters = 0;
         if (tokens.peek() != Token.Simple.OPEN) {
             throw new IllegalArgumentException("Expected `<`, found " + tokens.peek());
         }
@@ -176,6 +182,7 @@ public class InterfaceInjectionTask extends Task {
                 throw new IllegalArgumentException("Expected `>`, found "+next);
             }
             readTypeArgumentPart(signatureBuilder, classFinder, tokens);
+            parameters++;
             if (tokens.peek() == Token.Simple.COMMA) {
                 tokens.pop();
             } else if (tokens.peek() != Token.Simple.CLOSE) {
@@ -184,6 +191,7 @@ public class InterfaceInjectionTask extends Task {
         }
         signatureBuilder.append(">");
         tokens.pop();
+        return parameters;
     }
 
     private static void readBound(StringBuilder signatureBuilder, NonLoadingClassLoader classFinder, ArrayDeque<Token> tokens) {
@@ -262,24 +270,30 @@ public class InterfaceInjectionTask extends Task {
         };
     }
 
-    public static String parseSignature(String binaryName, String signature, NonLoadingClassLoader classFinder) {
+    private record Signature(String signature, int parameters) {}
+
+    public static Signature parseSignature(String binaryName, String signature, NonLoadingClassLoader classFinder) {
         var tokens = new ArrayDeque<>(lex(signature));
         StringBuilder binarySignature = new StringBuilder("L").append(binaryName);
 
-        readTypeArguments(binarySignature, classFinder, tokens);
+        int parameters = readTypeArguments(binarySignature, classFinder, tokens);
 
         binarySignature.append(";");
-        return binarySignature.toString();
+        return new Signature(binarySignature.toString(), parameters);
     }
 
     @SuppressWarnings("unchecked")
     @Override
     protected void run(Context context) {
         var outputJar = context.taskOutputPath(name(), "output");
+        var stubsJar = context.taskOutputPath(name(), "stubs");
         var inputJar = this.input.path(context);
 
         Map<String, List<InjectionData>> injections = new HashMap<>();
-        try (var classFinder = new NonLoadingClassLoader(classpath.paths(context).toArray(Path[]::new))) {
+        try (var classFinder = new NonLoadingClassLoader(classpath.paths(context).toArray(Path[]::new));
+             var stubsStream = Files.newOutputStream(stubsJar);
+             var stubsJarOut = new JarOutputStream(stubsStream)) {
+            Set<String> generated = new HashSet<>();
             for (var interfaceInjectionFile : this.interfaceInjection.paths(context)) {
 
                 try (var reader = Files.newBufferedReader(interfaceInjectionFile)) {
@@ -294,7 +308,37 @@ public class InterfaceInjectionTask extends Task {
                                 }
                                 var signature = injection.substring(injection.indexOf('<'), injection.lastIndexOf('>')+1);
                                 var parsedSignature = parseSignature(binaryName, signature, classFinder);
-                                injections.computeIfAbsent(target, k -> new ArrayList<>()).add(new InjectionData(binaryName, parsedSignature));
+                                injections.computeIfAbsent(target, k -> new ArrayList<>()).add(new InjectionData(binaryName, parsedSignature.signature()));
+                                if (!classFinder.hasClass(binaryName) && !generated.contains(binaryName)) {
+                                    generated.add(binaryName);
+                                    var stubEntry = new ZipEntry(binaryName + ".class");
+                                    stubsJarOut.putNextEntry(stubEntry);
+                                    var classWriter = new ClassWriter(0);
+                                    StringBuilder signatureBuilder = new StringBuilder("<");
+                                    for (int i = 0; i < parsedSignature.parameters(); i++) {
+                                        int quotient = i / 26;
+                                        int remainder = i % 26;
+                                        signatureBuilder.append((char)('A' + remainder));
+                                        while (quotient > 0) {
+                                            remainder = quotient % 26;
+                                            quotient /= 26;
+                                            signatureBuilder.append((char)('A' + remainder));
+                                        }
+                                        signatureBuilder.append(":Ljava/lang/Object;");
+                                    }
+                                    signatureBuilder.append(">Ljava/lang/Object;");
+                                    classWriter.visit(
+                                        Opcodes.V1_8,
+                                        Opcodes.ACC_PUBLIC | Opcodes.ACC_INTERFACE | Opcodes.ACC_ABSTRACT,
+                                        binaryName,
+                                        signatureBuilder.toString(),
+                                        "java/lang/Object",
+                                        new String[0]
+                                    );
+                                    classWriter.visitEnd();
+                                    stubsJarOut.write(classWriter.toByteArray());
+                                    stubsJarOut.closeEntry();
+                                }
                             } else {
                                 injections.computeIfAbsent(target, k -> new ArrayList<>()).add(new InjectionData(injection, null));
                             }

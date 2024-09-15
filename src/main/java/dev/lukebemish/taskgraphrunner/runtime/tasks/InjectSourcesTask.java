@@ -11,6 +11,7 @@ import java.io.BufferedInputStream;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.file.Files;
+import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -20,18 +21,21 @@ import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 
 public class InjectSourcesTask extends Task {
-    private final TaskInput.HasFileInput input;
-    private final TaskInput.HasFileInput sources;
+    private final List<TaskInput.HasFileInput> inputs;
 
     public InjectSourcesTask(TaskModel.InjectSources model, WorkItem workItem, Context context) {
         super(model.name());
-        this.input = TaskInput.file("input", model.input, workItem, context, PathSensitivity.NONE);
-        this.sources = TaskInput.file("sources", model.sources, workItem, context, PathSensitivity.NONE);
+        this.inputs = new ArrayList<>();
+        int count = 0;
+        for (var input : model.inputs) {
+            this.inputs.add(TaskInput.file("input"+count, input, workItem, context, PathSensitivity.NONE));
+            count++;
+        }
     }
 
     @Override
     public List<TaskInput> inputs() {
-        return List.of(input, sources);
+        return List.copyOf(inputs);
     }
 
     @Override
@@ -42,31 +46,21 @@ public class InjectSourcesTask extends Task {
     @Override
     protected void run(Context context) {
         Set<String> names = new HashSet<>();
-        try (var iis = new BufferedInputStream(Files.newInputStream(input.path(context)));
-             var sis = new BufferedInputStream(Files.newInputStream(sources.path(context)));
-             var os = Files.newOutputStream(context.taskOutputPath(name(), "output"));
-             var ziis = new ZipInputStream(iis);
-             var zsis = new ZipInputStream(sis);
-             var zos = new JarOutputStream(os)
-        ) {
-            ZipEntry entry;
-            while ((entry = ziis.getNextEntry()) != null) {
-                if (entry.isDirectory()) {
-                    continue;
-                }
-                names.add(entry.getName());
-                zos.putNextEntry(entry);
-                ziis.transferTo(zos);
-                zos.closeEntry();
-            }
-            while ((entry = zsis.getNextEntry()) != null) {
-                if (entry.isDirectory()) {
-                    continue;
-                }
-                if (!names.contains(entry.getName())) {
-                    zos.putNextEntry(entry);
-                    zsis.transferTo(zos);
-                    zos.closeEntry();
+        try (var os = Files.newOutputStream(context.taskOutputPath(name(), "output"));
+             var zos = new JarOutputStream(os)) {
+            for (var input : inputs) {
+                try (var is = new BufferedInputStream(Files.newInputStream(input.path(context)));
+                     var zis = new ZipInputStream(is)) {
+                    ZipEntry entry;
+                    while ((entry = zis.getNextEntry()) != null) {
+                        if (entry.isDirectory()) {
+                            continue;
+                        }
+                        names.add(entry.getName());
+                        zos.putNextEntry(entry);
+                        zis.transferTo(zos);
+                        zos.closeEntry();
+                    }
                 }
             }
         } catch (IOException e) {

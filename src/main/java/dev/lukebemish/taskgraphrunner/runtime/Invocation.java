@@ -7,9 +7,11 @@ import java.io.IOException;
 import java.nio.file.Path;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HexFormat;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 
 public class Invocation implements Context {
@@ -18,7 +20,8 @@ public class Invocation implements Context {
     private final LockManager lockManager;
 
     private final Map<String, Task> tasks = new HashMap<>();
-    private final ArtifactManifest artifactManifest = new ArtifactManifest();
+    private final List<ArtifactManifest> artifactManifests = new ArrayList<>();
+    private final ArtifactManifest artifactManifest = ArtifactManifest.delegating(artifactManifests);
     private final boolean useCached;
 
     public Invocation(Path cacheDirectory, boolean useCached) throws IOException {
@@ -31,8 +34,8 @@ public class Invocation implements Context {
         tasks.put(task.name(), task);
     }
 
-    public void artifactManifest(Path manifest) {
-        artifactManifest.artifactManifest(manifest);
+    public void artifactManifest(ArtifactManifest manifest) {
+        artifactManifests.add(manifest);
     }
 
     @Override

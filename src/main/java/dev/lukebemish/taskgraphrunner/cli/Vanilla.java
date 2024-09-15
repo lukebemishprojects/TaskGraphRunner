@@ -6,9 +6,8 @@ import dev.lukebemish.taskgraphrunner.model.Distribution;
 import dev.lukebemish.taskgraphrunner.model.Output;
 import dev.lukebemish.taskgraphrunner.model.Value;
 import dev.lukebemish.taskgraphrunner.model.WorkItem;
-import dev.lukebemish.taskgraphrunner.model.conversion.NeoFormGenerator;
+import dev.lukebemish.taskgraphrunner.model.conversion.SingleVersionGenerator;
 import dev.lukebemish.taskgraphrunner.runtime.ArtifactManifest;
-import org.jspecify.annotations.Nullable;
 import picocli.CommandLine;
 
 import java.io.IOException;
@@ -17,12 +16,12 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 
-@CommandLine.Command(name = "neoform", mixinStandardHelpOptions = true, description = "Convert a neoform config to a task graph.")
-public class NeoForm implements Runnable {
+@CommandLine.Command(name = "vanilla", mixinStandardHelpOptions = true, description = "Generate a task graph file for a single MC version, without recompilation or patching.")
+public class Vanilla implements Runnable {
     private final Main main;
 
-    @CommandLine.Parameters(index = "0", description = "NeoForm zip file, as artifact:<artifact ID> or file:path form.")
-    String zip;
+    @CommandLine.Parameters(index = "0", description = "Version to generate a config for.")
+    String version;
 
     @CommandLine.Parameters(index = "1", description = "Output config file.")
     Path target;
@@ -42,20 +41,14 @@ public class NeoForm implements Runnable {
     @CommandLine.Option(names = "--parchment-data", description = "Parchment data, as artifact:<artifact ID> or file:path form.")
     String parchmentData = null;
 
-    @CommandLine.Option(names = "--recompile", description = "Whether the game should be recompiled.")
-    boolean recompile = true;
-
-    @CommandLine.Option(names = "--fix-line-numbers", description = "Whether to fix line numbers using vineflower output and patches.")
-    @Nullable Boolean fixLineNumbers;
-
-    NeoForm(Main main) {
+    Vanilla(Main main) {
         this.main = main;
     }
 
     @Override
     public void run() {
         try {
-            var optionsBuilder = NeoFormGenerator.Options.builder();
+            var optionsBuilder = SingleVersionGenerator.Options.builder();
             if (!accessTransformers.isEmpty()) {
                 optionsBuilder.accessTransformersParameter("accessTransformers");
             }
@@ -65,12 +58,9 @@ public class NeoForm implements Runnable {
             if (parchmentData != null) {
                 optionsBuilder.parchmentDataParameter("parchmentData");
             }
-            optionsBuilder.recompile(recompile);
-            optionsBuilder.fixLineNumbers(fixLineNumbers == null ? !recompile : fixLineNumbers);
             optionsBuilder.distribution(Distribution.valueOf(distribution.toUpperCase()));
             ArtifactManifest manifest = main.makeManifest();
-            var zipPath = manifest.resolve(zip);
-            Config config = NeoFormGenerator.convert(zipPath, new Value.StringValue(manifest.absolute(zip)), optionsBuilder.build());
+            Config config = SingleVersionGenerator.convert(version, optionsBuilder.build());
             var workItem = new WorkItem();
             for (var result : results) {
                 var split = result.split(":");

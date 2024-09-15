@@ -26,6 +26,10 @@ public abstract sealed class Argument {
         this.pattern = pattern;
     }
 
+    public static Argument.ValueInput direct(String value) {
+        return new Argument.ValueInput(null, new Input.DirectInput(new Value.StringValue(value)));
+    }
+
     static final class ArgumentAdapter extends GsonAdapter<Argument> {
         private static final Map<String, TypeAdapter<? extends Argument>> TASK_TYPES = Map.of(
             "value", new ValueInput.Specialized(),

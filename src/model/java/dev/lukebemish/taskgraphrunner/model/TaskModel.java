@@ -336,22 +336,19 @@ public sealed abstract class TaskModel {
 
     @JsonAdapter(Adapter.class)
     public static final class InjectSources extends TaskModel {
-        public Input input;
-        public Input sources;
+        public final List<Input> inputs = new ArrayList<>();
 
-        public InjectSources(String name, Input input, Input sources) {
+        public InjectSources(String name, List<Input> inputs) {
             super(name);
-            this.input = input;
-            this.sources = sources;
+            this.inputs.addAll(inputs);
         }
 
         private static final class Specialized extends FieldAdapter<InjectSources> {
             @Override
             public Function<Values, InjectSources> build(Builder<InjectSources> builder) {
                 var name = builder.field("name", task -> task.name, String.class);
-                var input = builder.field("input", task -> task.input, Input.class);
-                var sources = builder.field("sources", task -> task.sources, Input.class);
-                return values -> new InjectSources(values.get(name), values.get(input), values.get(sources));
+                var inputs = builder.field("inputs", task -> task.inputs, TypeToken.getParameterized(List.class, Input.class).getType());
+                return values -> new InjectSources(values.get(name), values.get(inputs));
             }
         }
     }

@@ -1,10 +1,13 @@
 package dev.lukebemish.taskgraphrunner.cli;
 
+import dev.lukebemish.taskgraphrunner.runtime.ArtifactManifest;
 import dev.lukebemish.taskgraphrunner.runtime.util.OsUtils;
 import picocli.CommandLine;
 
+import java.net.URI;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.ArrayList;
 import java.util.List;
 
 @CommandLine.Command(name = "taskgraphrunner", mixinStandardHelpOptions = true)
@@ -12,8 +15,35 @@ public class Main {
     @CommandLine.Option(names = "--cache-dir", description = "Where caches should be stored.")
     Path cacheDir = defaultCacheDirectory();
 
-    @CommandLine.Option(names = "--artifact-manifest", description = "Artifact manifest files.", arity = "*")
-    List<Path> artifactManifests = List.of();
+    @CommandLine.ArgGroup(exclusive = false, multiplicity = "*", heading = "Artifact manifests%n")
+    List<ArtifactManifestOption> artifactManifests = new ArrayList<>();
+
+    static class ArtifactManifestOption {
+        @CommandLine.Option(names = "--artifact-manifest", description = "Artifact manifest files.", required = true)
+        Path artifactManifest;
+        @CommandLine.ArgGroup(exclusive = false, heading = "Maven-downloading artifact manifest%n")
+        MavenArtifactManifest maven;
+    }
+
+    static class MavenArtifactManifest {
+        @CommandLine.Option(names = "--maven-url", description = "Maven URL.", required = true)
+        URI mavenUrl;
+        @CommandLine.Option(names = "--maven-download-directory", description = "Maven repository.", required = true)
+        Path targetDirectory;
+    }
+
+    protected ArtifactManifest makeManifest() {
+        var manifests = new ArrayList<ArtifactManifest>();
+        ArtifactManifest manifest = ArtifactManifest.delegating(manifests);
+        for (var m : artifactManifests) {
+            if (m.maven != null) {
+                manifests.add(ArtifactManifest.mavenDownload(m.artifactManifest, m.maven.mavenUrl, m.maven.targetDirectory));
+            } else {
+                manifests.add(ArtifactManifest.fromPath(m.artifactManifest));
+            }
+        }
+        return manifest;
+    }
 
     public static void main(String[] args) {
         var main = new Main();
@@ -21,6 +51,7 @@ public class Main {
             .addSubcommand("run", new Run(main))
             .addSubcommand("clean", new Clean(main))
             .addSubcommand("neoform", new NeoForm(main))
+            .addSubcommand("vanilla", new Vanilla(main))
             .execute(args);
     }
 
