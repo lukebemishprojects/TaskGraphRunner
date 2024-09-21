@@ -56,10 +56,11 @@ public class InjectSourcesTask extends Task {
                         if (entry.isDirectory()) {
                             continue;
                         }
-                        names.add(entry.getName());
-                        zos.putNextEntry(entry);
-                        zis.transferTo(zos);
-                        zos.closeEntry();
+                        if (names.add(entry.getName())) {
+                            zos.putNextEntry(entry);
+                            zis.transferTo(zos);
+                            zos.closeEntry();
+                        }
                     }
                 }
             }
