@@ -45,9 +45,15 @@ public class Clean implements Runnable {
     public void run() {
         try {
             LockManager lockManager = new LockManager(main.cacheDir.resolve("locks"));
-            cleanAssets(lockManager);
-            cleanTaskOutputs(lockManager);
-            lockManager.cleanOldLocks(lockDuration);
+            if (assetDuration >= 0) {
+                cleanAssets(lockManager);
+            }
+            if (outputDuration >= 0) {
+                cleanTaskOutputs(lockManager);
+            }
+            if (lockDuration >= 0) {
+                lockManager.cleanOldLocks(lockDuration);
+            }
         } catch (IOException e) {
             throw new UncheckedIOException(e);
         }
@@ -89,10 +95,10 @@ public class Clean implements Runnable {
                         return;
                     }
                 }
-                var toDelete = new HashSet<>(indexes.stream()
+                var toDelete = indexes.stream()
                     .filter(info -> info.lastAccess.compareTo(outdated) < 0)
                     .flatMap(info -> info.hashes.stream())
-                    .collect(Collectors.toSet()));
+                    .collect(Collectors.toCollection(HashSet::new));
                 indexes.stream()
                     .filter(info -> info.lastAccess.compareTo(outdated) >= 0)
                     .forEach(info -> toDelete.removeAll(info.hashes));
