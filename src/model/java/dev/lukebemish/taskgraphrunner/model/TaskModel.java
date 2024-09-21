@@ -61,6 +61,8 @@ public sealed abstract class TaskModel {
             taskTypeNames.put(InterfaceInjection.class, "interfaceInjection");
             taskTypes.put("jst", new Jst.Specialized());
             taskTypeNames.put(Jst.class, "jst");
+            taskTypes.put("downloadAssets", new DownloadAssets.Specialized());
+            taskTypeNames.put(DownloadAssets.class, "downloadAssets");
 
             TASK_TYPES = Map.copyOf(taskTypes);
             TASK_TYPE_NAMES = Map.copyOf(taskTypeNames);
@@ -205,6 +207,25 @@ public sealed abstract class TaskModel {
                 var name = builder.field("name", task -> task.name, String.class);
                 var arguments = builder.field("args", task -> task.args, TypeToken.getParameterized(List.class, Argument.class).getType());
                 return values -> new Tool(values.get(name), values.get(arguments));
+            }
+        }
+    }
+
+    @JsonAdapter(Adapter.class)
+    public static final class DownloadAssets extends TaskModel {
+        public Input versionJson;
+
+        public DownloadAssets(String name, Input versionJson) {
+            super(name);
+            this.versionJson = versionJson;
+        }
+
+        private static final class Specialized extends FieldAdapter<DownloadAssets> {
+            @Override
+            public Function<Values, DownloadAssets> build(Builder<DownloadAssets> builder) {
+                var name = builder.field("name", task -> task.name, String.class);
+                var versionJson = builder.field("versionJson", task -> task.versionJson, Input.class);
+                return values -> new DownloadAssets(values.get(name), values.get(versionJson));
             }
         }
     }

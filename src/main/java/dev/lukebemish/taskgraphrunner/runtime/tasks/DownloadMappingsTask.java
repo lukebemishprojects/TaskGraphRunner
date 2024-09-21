@@ -49,7 +49,7 @@ public class DownloadMappingsTask extends Task {
             var json = JsonUtils.GSON.fromJson(reader, JsonObject.class);
             var downloads = json.getAsJsonObject("downloads");
             var download = downloads.getAsJsonObject(distribution == Distribution.CLIENT ? "client_mappings" : "server_mappings");
-            var size = download.get("size").getAsInt();
+            var size = download.get("size").getAsLong();
             var sha1 = download.get("sha1").getAsString();
             var url = download.get("url").getAsString();
             var spec = new DownloadUtils.Spec.ChecksumAndSize(new URI(url), sha1, "SHA-1", size);

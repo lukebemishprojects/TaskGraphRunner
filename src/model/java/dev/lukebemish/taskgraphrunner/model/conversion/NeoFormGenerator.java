@@ -250,6 +250,9 @@ public final class NeoFormGenerator {
             config.tasks.add(task);
         }
 
+        config.tasks.add(new TaskModel.DownloadAssets("downloadAssets", new Input.TaskInput(new Output(downloadJsonName, "output"))));
+        config.aliases.put("assets", new Output("downloadAssets", "properties"));
+
         Output sourcesTask = new Output("patch", "output");
 
         List<Output> sourcesStubs = new ArrayList<>();

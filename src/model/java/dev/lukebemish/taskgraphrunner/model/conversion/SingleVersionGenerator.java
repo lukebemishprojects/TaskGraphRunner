@@ -78,6 +78,9 @@ public final class SingleVersionGenerator {
         config.tasks.add(new TaskModel.DownloadJson(downloadJsonName, new Input.DirectInput(new Value.StringValue(version)), new Input.TaskInput(new Output(downloadManifestName, "output"))));
         config.tasks.add(new TaskModel.ListClasspath(listLibrariesName, new Input.TaskInput(new Output(downloadJsonName, "output")), null));
 
+        config.tasks.add(new TaskModel.DownloadAssets("downloadAssets", new Input.TaskInput(new Output(downloadJsonName, "output"))));
+        config.aliases.put("assets", new Output("downloadAssets", "properties"));
+
         Output merged = switch (options.distribution) {
             case CLIENT -> {
                 config.tasks.add(new TaskModel.DownloadDistribution("downloadClient", new Input.DirectInput(new Value.StringValue("client")), new Input.TaskInput(new Output(downloadJsonName, "output"))));

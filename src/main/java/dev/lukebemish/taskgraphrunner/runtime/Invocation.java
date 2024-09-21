@@ -23,11 +23,13 @@ public class Invocation implements Context {
     private final List<ArtifactManifest> artifactManifests = new ArrayList<>();
     private final ArtifactManifest artifactManifest = ArtifactManifest.delegating(artifactManifests);
     private final boolean useCached;
+    private final AssetDownloadOptions assetOptions;
 
-    public Invocation(Path cacheDirectory, boolean useCached) throws IOException {
+    public Invocation(Path cacheDirectory, AssetDownloadOptions assetDownloadOptions, boolean useCached) throws IOException {
         this.cacheDirectory = cacheDirectory;
         this.lockManager = new LockManager(cacheDirectory.resolve("locks"));
         this.useCached = useCached;
+        this.assetOptions = assetDownloadOptions;
     }
 
     public void addTask(Task task) {
@@ -125,6 +127,11 @@ public class Invocation implements Context {
     @Override
     public boolean useCached() {
         return this.useCached;
+    }
+
+    @Override
+    public AssetDownloadOptions assetOptions() {
+        return this.assetOptions;
     }
 
     public void execute(Map<Output, Path> results) {

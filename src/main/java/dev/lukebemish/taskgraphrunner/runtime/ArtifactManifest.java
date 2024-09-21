@@ -97,7 +97,7 @@ public abstract sealed class ArtifactManifest {
         private final Map<String, Path> artifacts = new HashMap<>();
 
         public PathArtifactManifest(Path manifest) {
-            try (var reader = Files.newBufferedReader(manifest, StandardCharsets.ISO_8859_1)) {
+            try (var reader = Files.newBufferedReader(manifest, StandardCharsets.UTF_8)) {
                 Properties properties = new Properties();
                 properties.load(reader);
                 for (var entry : properties.entrySet()) {
@@ -118,12 +118,12 @@ public abstract sealed class ArtifactManifest {
     private synchronized static void appendArtifact(Path propertiesFile, String notation, Path path) throws IOException {
         var properties = new Properties();
         if (Files.exists(propertiesFile)) {
-            try (var reader = Files.newBufferedReader(propertiesFile, StandardCharsets.ISO_8859_1)) {
+            try (var reader = Files.newBufferedReader(propertiesFile, StandardCharsets.UTF_8)) {
                 properties.load(reader);
             }
         }
         properties.setProperty(notation, path.toAbsolutePath().toString());
-        try (var writer = Files.newBufferedWriter(propertiesFile, StandardCharsets.ISO_8859_1)) {
+        try (var writer = Files.newBufferedWriter(propertiesFile, StandardCharsets.UTF_8)) {
             properties.store(writer, null);
         }
     }

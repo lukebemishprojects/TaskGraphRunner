@@ -8,6 +8,7 @@ import com.google.gson.JsonPrimitive;
 import dev.lukebemish.taskgraphrunner.model.TaskModel;
 import dev.lukebemish.taskgraphrunner.model.WorkItem;
 import dev.lukebemish.taskgraphrunner.runtime.tasks.CompileTask;
+import dev.lukebemish.taskgraphrunner.runtime.tasks.DownloadAssetsTask;
 import dev.lukebemish.taskgraphrunner.runtime.tasks.DownloadDistributionTask;
 import dev.lukebemish.taskgraphrunner.runtime.tasks.DownloadJsonTask;
 import dev.lukebemish.taskgraphrunner.runtime.tasks.DownloadManifestTask;
@@ -289,6 +290,7 @@ public abstract class Task implements RecordedInput {
             case TaskModel.Compile compile -> new CompileTask(compile, workItem, context);
             case TaskModel.InterfaceInjection interfaceInjection -> new InterfaceInjectionTask(interfaceInjection, workItem, context);
             case TaskModel.Jst jst -> new JstTask(jst, workItem, context);
+            case TaskModel.DownloadAssets downloadAssets ->  new DownloadAssetsTask(downloadAssets, workItem, context);
         };
     }
 

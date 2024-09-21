@@ -1,6 +1,7 @@
 plugins {
     id 'java-library'
-    id "com.gradleup.shadow" version '8.3.0'
+    id 'maven-publish'
+    id 'com.gradleup.shadow' version '8.3.0'
 }
 
 group = 'dev.lukebemish'
@@ -92,4 +93,12 @@ tools.values().each {
 
 compileJava {
     options.compilerArgs += ["-Aproject=${project.group}/${project.name}"]
+}
+
+publishing {
+    publications {
+        mavenJava(MavenPublication) {
+            from components.java
+        }
+    }
 }

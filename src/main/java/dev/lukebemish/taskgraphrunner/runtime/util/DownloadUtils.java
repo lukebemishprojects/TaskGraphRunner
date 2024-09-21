@@ -81,7 +81,7 @@ public final class DownloadUtils {
 
         String checksum();
         String checksumAlgorithm();
-        int size();
+        long size();
 
         record Simple(URI uri) implements Spec {
             @Override
@@ -95,18 +95,18 @@ public final class DownloadUtils {
             }
 
             @Override
-            public int size() {
+            public long size() {
                 return -1;
             }
         }
 
         record Checksum(URI uri, String checksum, String checksumAlgorithm) implements Spec {
             @Override
-            public int size() {
+            public long size() {
                 return -1;
             }
         }
 
-        record ChecksumAndSize(URI uri, String checksum, String checksumAlgorithm, int size) implements Spec {}
+        record ChecksumAndSize(URI uri, String checksum, String checksumAlgorithm, long size) implements Spec {}
     }
 }
