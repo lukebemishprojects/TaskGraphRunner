@@ -54,10 +54,7 @@ public class DownloadAssetsTask extends Task {
         var indexNumber = properties.getProperty("asset_index");
         var assetsRoot = new File(properties.getProperty("assets_root")).toPath();
         var targetIndex = assetsRoot.resolve("indexes").resolve(indexNumber + ".json");
-        if (!Files.exists(targetIndex)) {
-            return false;
-        }
-        return true;
+        return Files.exists(targetIndex);
     }
 
     @Override
@@ -73,7 +70,7 @@ public class DownloadAssetsTask extends Task {
             var sha1 = assetIndex.get("sha1").getAsString();
             var url = assetIndex.get("url").getAsString();
             var spec = new DownloadUtils.Spec.ChecksumAndSize(new URI(url), sha1, "SHA-1", size);
-            var assetsRoot = AssetsUtils.findOrDownloadIndexAndAssets(spec, assetIndexNumber, context.assetOptions());
+            var assetsRoot = AssetsUtils.findOrDownloadIndexAndAssets(spec, assetIndexNumber, context);
 
             var properties = new Properties();
             properties.setProperty("asset_index", assetIndexNumber);
