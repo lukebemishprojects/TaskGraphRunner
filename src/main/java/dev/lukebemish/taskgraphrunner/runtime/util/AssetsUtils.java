@@ -57,16 +57,19 @@ public final class AssetsUtils {
                 }
             }
         }
+        targets.sort(ASSET_INDEX_COUNT_DESCENDING);
         return targets;
     }
 
     private AssetsUtils() {}
 
-    public static Path findOrDownloadIndexAndAssets(DownloadUtils.Spec spec, String assetIndexVersion, Context.AssetDownloadOptions assetOptions) throws IOException {
+    public static Path findOrDownloadIndexAndAssets(DownloadUtils.Spec spec, String assetIndexVersion, Context context) throws IOException {
+        var assetOptions = context.assetOptions();
         if (!assetOptions.redownloadAssets()) {
             var launcherTargets = findTargets(assetOptions);
             for (var target : launcherTargets) {
                 if (target.indexes.contains(assetIndexVersion)) {
+                    LOGGER.info("Using existing assets directory "+target.directory);
                     return target.directory;
                 }
             }
@@ -74,13 +77,16 @@ public final class AssetsUtils {
 
         var targetPath = assetOptions.assetRoot().resolve("indexes").resolve(assetIndexVersion + ".json");
         if (!Files.exists(targetPath) || assetOptions.redownloadAssets()) {
-            DownloadUtils.download(spec, targetPath);
-
-            // Download the assets
             JsonObject json;
-            try (var reader = Files.newBufferedReader(targetPath)) {
-                json = JsonUtils.GSON.fromJson(reader, JsonObject.class);
+            try (var ignored = context.lockManager().lockSingleFile(targetPath)) {
+                DownloadUtils.download(spec, targetPath);
+
+                // Download the assets
+                try (var reader = Files.newBufferedReader(targetPath)) {
+                    json = JsonUtils.GSON.fromJson(reader, JsonObject.class);
+                }
             }
+
             var objectsPath = assetOptions.assetRoot().resolve(OBJECT_FOLDER);
             var objects = json.getAsJsonObject("objects");
             var targets = objects.asMap().values().stream()
@@ -96,24 +102,26 @@ public final class AssetsUtils {
                 })
                 .toList();
 
-            var futures = new ArrayList<Future<?>>();
-            for (var target : targets) {
-                futures.add(DOWNLOAD_EXECUTOR.submit(() -> {
+            try (var ignored = context.lockManager().lockSingleFiles(targets.stream().map(DownloadTarget::target).toList())) {
+                var futures = new ArrayList<Future<?>>();
+                for (var target : targets) {
+                    futures.add(DOWNLOAD_EXECUTOR.submit(() -> {
+                        try {
+                            DOWNLOAD_SEMAPHORE.acquire();
+                            DownloadUtils.download(target.spec(), target.target());
+                        } catch (IOException | InterruptedException e) {
+                            LOGGER.error("Failed to download asset " + target.name(), e);
+                        } finally {
+                            DOWNLOAD_SEMAPHORE.release();
+                        }
+                    }));
+                }
+                for (var future : futures) {
                     try {
-                        DOWNLOAD_SEMAPHORE.acquire();
-                        DownloadUtils.download(target.spec(), target.target());
-                    } catch (IOException | InterruptedException e) {
-                        LOGGER.error("Failed to download asset "+target.name(), e);
-                    } finally {
-                        DOWNLOAD_SEMAPHORE.release();
+                        future.get();
+                    } catch (InterruptedException | ExecutionException e) {
+                        throw new RuntimeException(e);
                     }
-                }));
-            }
-            for (var future : futures) {
-                try {
-                    future.get();
-                } catch (InterruptedException | ExecutionException e) {
-                    throw new RuntimeException(e);
                 }
             }
         }

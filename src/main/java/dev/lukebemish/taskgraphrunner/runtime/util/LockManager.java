@@ -38,6 +38,15 @@ public class LockManager {
         return new Locks(locks);
     }
 
+    public Lock lockSingleFile(Path path) {
+        return lock(HashUtils.hash(path.toAbsolutePath().toString()));
+    }
+
+    public Locks lockSingleFiles(List<Path> paths) {
+        var locks = paths.stream().map(this::lockSingleFile).toList();
+        return new Locks(locks);
+    }
+
     public Lock lock(String key) {
         var lockFile = getLockFile(key);
 

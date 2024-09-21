@@ -63,24 +63,25 @@ public class Clean implements Runnable {
         FileTime outdated = FileTime.from(Instant.now().minus(assetDuration, ChronoUnit.DAYS));
 
         if (Files.isDirectory(main.cacheDir.resolve("assets").resolve("indexes"))) {
-            List<String> assetIndexes;
+            List<Path> assetIndexes;
             try (var stream = Files.list(main.cacheDir.resolve("assets").resolve("indexes"))) {
                 assetIndexes = stream
-                    .map(it -> it.getFileName().toString())
-                    .filter(it -> it.endsWith(".json"))
+                    .filter(it -> it.getFileName().toString().endsWith(".json"))
                     .toList();
             } catch (IOException e) {
                 LOGGER.error("Issue listing asset indexes", e);
                 return;
             }
-            try (var ignored = lockManager.locks(assetIndexes)) {
+            var objectsPath = main.cacheDir.resolve("assets").resolve("objects");
+            try (var ignored = lockManager.lockSingleFiles(assetIndexes);
+                 var ignored2 = lockManager.lockSingleFile(objectsPath)) {
                 record IndexInfo(String name, FileTime lastAccess, Set<String> hashes) {}
                 var indexes = new ArrayList<IndexInfo>();
-                for (String index : assetIndexes) {
-                    Path path = main.cacheDir.resolve("assets").resolve("indexes").resolve(index);
+                for (Path path : assetIndexes) {
                     try {
                         if (Files.exists(path) && Files.isRegularFile(path)) {
                             BasicFileAttributes attributes = Files.readAttributes(path, BasicFileAttributes.class);
+                            var lastAccessTime = attributes.lastAccessTime();
                             Set<String> hashes = new HashSet<>();
                             try (var reader = Files.newBufferedReader(path)) {
                                 var objects = JsonUtils.GSON.fromJson(reader, JsonObject.class).getAsJsonObject("objects");
@@ -88,10 +89,10 @@ public class Clean implements Runnable {
                                     hashes.add(entry.getValue().getAsJsonObject().getAsJsonPrimitive("hash").getAsString());
                                 }
                             }
-                            indexes.add(new IndexInfo(index, attributes.lastAccessTime(), hashes));
+                            indexes.add(new IndexInfo(path.getFileName().toString(), lastAccessTime, hashes));
                         }
                     } catch (IOException e) {
-                        LOGGER.error("Issue reading asset index {}", index, e);
+                        LOGGER.error("Issue reading asset index {}", path, e);
                         return;
                     }
                 }
