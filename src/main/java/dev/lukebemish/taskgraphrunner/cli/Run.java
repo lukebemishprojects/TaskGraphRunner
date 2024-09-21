@@ -124,7 +124,7 @@ public class Run implements Runnable {
                     launcherDirs.addAll(this.launcherDirs);
                 }
                 assetsOptions.potentialLauncherRoots(launcherDirs);
-                Invocation invocation = new Invocation(main.cacheDir, assetsOptions.build(), !useCache);
+                Invocation invocation = new Invocation(main.cacheDir, assetsOptions.build(), useCache);
                 invocation.artifactManifest(main.makeManifest());
                 for (var model : config.tasks) {
                     var task = Task.task(model, workItem, invocation);

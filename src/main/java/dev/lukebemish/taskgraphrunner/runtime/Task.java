@@ -142,7 +142,7 @@ public abstract class Task implements RecordedInput {
                     }
                 } catch (Exception e) {
                     // something went wrong -- let's log it, then keep going:
-                    // TODO: log it
+                    LOGGER.info("Up-to-date check for task `" + name + "` failed", e);
                 }
             }
             // Something was not up-to-date -- so we run everything

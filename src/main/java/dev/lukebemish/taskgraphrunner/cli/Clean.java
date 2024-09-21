@@ -1,5 +1,7 @@
 package dev.lukebemish.taskgraphrunner.cli;
 
+import com.google.gson.JsonObject;
+import dev.lukebemish.taskgraphrunner.runtime.util.JsonUtils;
 import dev.lukebemish.taskgraphrunner.runtime.util.LockManager;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -13,7 +15,12 @@ import java.nio.file.attribute.BasicFileAttributes;
 import java.nio.file.attribute.FileTime;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.stream.Collectors;
 
 @CommandLine.Command(name = "clean", mixinStandardHelpOptions = true, description = "Clean up old outputs")
 public class Clean implements Runnable {
@@ -27,6 +34,9 @@ public class Clean implements Runnable {
     @CommandLine.Option(names = "--output-duration", description = "Time to keep task outputs for, in days.", arity = "*")
     int outputDuration = 30;
 
+    @CommandLine.Option(names = "--asset-duration", description = "Time to keep downloaded assets for, in days.", arity = "*")
+    int assetDuration = 30;
+
     Clean(Main main) {
         this.main = main;
     }
@@ -35,10 +45,89 @@ public class Clean implements Runnable {
     public void run() {
         try {
             LockManager lockManager = new LockManager(main.cacheDir.resolve("locks"));
+            cleanAssets(lockManager);
             cleanTaskOutputs(lockManager);
             lockManager.cleanOldLocks(lockDuration);
         } catch (IOException e) {
             throw new UncheckedIOException(e);
+        }
+    }
+
+    private void cleanAssets(LockManager lockManager) {
+        FileTime outdated = FileTime.from(Instant.now().minus(assetDuration, ChronoUnit.DAYS));
+
+        if (Files.isDirectory(main.cacheDir.resolve("assets").resolve("indexes"))) {
+            List<String> assetIndexes;
+            try (var stream = Files.list(main.cacheDir.resolve("assets").resolve("indexes"))) {
+                assetIndexes = stream
+                    .map(it -> it.getFileName().toString())
+                    .filter(it -> it.endsWith(".json"))
+                    .toList();
+            } catch (IOException e) {
+                LOGGER.error("Issue listing asset indexes", e);
+                return;
+            }
+            try (var ignored = lockManager.locks(assetIndexes)) {
+                record IndexInfo(String name, FileTime lastAccess, Set<String> hashes) {}
+                var indexes = new ArrayList<IndexInfo>();
+                for (String index : assetIndexes) {
+                    Path path = main.cacheDir.resolve("assets").resolve("indexes").resolve(index);
+                    try {
+                        if (Files.exists(path) && Files.isRegularFile(path)) {
+                            BasicFileAttributes attributes = Files.readAttributes(path, BasicFileAttributes.class);
+                            Set<String> hashes = new HashSet<>();
+                            try (var reader = Files.newBufferedReader(path)) {
+                                var objects = JsonUtils.GSON.fromJson(reader, JsonObject.class).getAsJsonObject("objects");
+                                for (var entry : objects.entrySet()) {
+                                    hashes.add(entry.getValue().getAsJsonObject().getAsJsonPrimitive("hash").getAsString());
+                                }
+                            }
+                            indexes.add(new IndexInfo(index, attributes.lastAccessTime(), hashes));
+                        }
+                    } catch (IOException e) {
+                        LOGGER.error("Issue reading asset index {}", index, e);
+                        return;
+                    }
+                }
+                var toDelete = new HashSet<>(indexes.stream()
+                    .filter(info -> info.lastAccess.compareTo(outdated) < 0)
+                    .flatMap(info -> info.hashes.stream())
+                    .collect(Collectors.toSet()));
+                indexes.stream()
+                    .filter(info -> info.lastAccess.compareTo(outdated) >= 0)
+                    .forEach(info -> toDelete.removeAll(info.hashes));
+
+                var deletedAssets = new AtomicInteger();
+                var deletedIndexes = new AtomicInteger();
+                for (String hash : toDelete) {
+                    Path asset = main.cacheDir.resolve("assets").resolve("objects").resolve(hash.substring(0, 2)).resolve(hash);
+                    if (Files.exists(asset) && Files.isRegularFile(asset)) {
+                        try {
+                            Files.delete(asset);
+                            deletedAssets.incrementAndGet();
+                        } catch (IOException e) {
+                            LOGGER.error("Issue deleting asset {}", asset, e);
+                        }
+                    }
+                }
+                for (var info : indexes) {
+                    if (info.lastAccess.compareTo(outdated) < 0) {
+                        Path path = main.cacheDir.resolve("assets").resolve("indexes").resolve(info.name);
+                        try {
+                            Files.delete(path);
+                            deletedIndexes.incrementAndGet();
+                        } catch (IOException e) {
+                            LOGGER.error("Issue deleting asset index {}", path, e);
+                        }
+                    }
+                }
+                if (deletedIndexes.get() > 0) {
+                    LOGGER.info("Deleted {} outdated asset indexes", deletedIndexes.get());
+                }
+                if (deletedAssets.get() > 0) {
+                    LOGGER.info("Deleted {} unused assets", deletedAssets.get());
+                }
+            }
         }
     }
 
