@@ -47,12 +47,12 @@ public class Main {
 
     public static void main(String[] args) {
         var main = new Main();
-        new CommandLine(main)
+        System.exit(new CommandLine(main)
             .addSubcommand("run", new Run(main))
             .addSubcommand("clean", new Clean(main))
             .addSubcommand("neoform", new NeoForm(main))
             .addSubcommand("vanilla", new Vanilla(main))
-            .execute(args);
+            .execute(args));
     }
 
     private static Path defaultCacheDirectory() {
