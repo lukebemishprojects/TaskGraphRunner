@@ -104,6 +104,7 @@ public sealed abstract class TaskModel {
         public TransformMappings(String name, MappingsFormat format, MappingsSource source) {
             super(name);
             this.format = format;
+            this.source = source;
         }
 
         private static final class Specialized extends FieldAdapter<TransformMappings> {

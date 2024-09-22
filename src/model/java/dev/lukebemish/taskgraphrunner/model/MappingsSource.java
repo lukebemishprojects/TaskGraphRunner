@@ -14,6 +14,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
 
+@JsonAdapter(MappingsSource.Adapter.class)
 public sealed interface MappingsSource {
     final class Adapter extends GsonAdapter<MappingsSource> {
         private static final Map<String, TypeAdapter<? extends MappingsSource>> SOURCE_TYPES;
