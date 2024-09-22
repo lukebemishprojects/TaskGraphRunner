@@ -21,6 +21,7 @@ import dev.lukebemish.taskgraphrunner.runtime.tasks.PatchSourcesTask;
 import dev.lukebemish.taskgraphrunner.runtime.tasks.RetrieveDataTask;
 import dev.lukebemish.taskgraphrunner.runtime.tasks.SplitClassesResourcesTask;
 import dev.lukebemish.taskgraphrunner.runtime.tasks.ToolTask;
+import dev.lukebemish.taskgraphrunner.runtime.tasks.TransformMappingsTask;
 import dev.lukebemish.taskgraphrunner.runtime.util.HashUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -291,6 +292,7 @@ public abstract class Task implements RecordedInput {
             case TaskModel.InterfaceInjection interfaceInjection -> new InterfaceInjectionTask(interfaceInjection, workItem, context);
             case TaskModel.Jst jst -> new JstTask(jst, workItem, context);
             case TaskModel.DownloadAssets downloadAssets ->  new DownloadAssetsTask(downloadAssets, workItem, context);
+            case TaskModel.TransformMappings transformMappings -> new TransformMappingsTask(transformMappings, workItem, context);
         };
     }
 

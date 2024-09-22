@@ -63,6 +63,8 @@ public sealed abstract class TaskModel {
             taskTypeNames.put(Jst.class, "jst");
             taskTypes.put("downloadAssets", new DownloadAssets.Specialized());
             taskTypeNames.put(DownloadAssets.class, "downloadAssets");
+            taskTypes.put("transformMappings", new TransformMappings.Specialized());
+            taskTypeNames.put(TransformMappings.class, "transformMappings");
 
             TASK_TYPES = Map.copyOf(taskTypes);
             TASK_TYPE_NAMES = Map.copyOf(taskTypeNames);
@@ -91,6 +93,27 @@ public sealed abstract class TaskModel {
                 throw new IllegalArgumentException("Unknown task type `" + type + "`");
             }
             return taskType.fromJsonTree(json);
+        }
+    }
+
+    @JsonAdapter(Adapter.class)
+    public static final class TransformMappings extends TaskModel {
+        public MappingsFormat format;
+        public MappingsSource source;
+
+        public TransformMappings(String name, MappingsFormat format, MappingsSource source) {
+            super(name);
+            this.format = format;
+        }
+
+        private static final class Specialized extends FieldAdapter<TransformMappings> {
+            @Override
+            public Function<Values, TransformMappings> build(Builder<TransformMappings> builder) {
+                var name = builder.field("name", task -> task.name, String.class);
+                var format = builder.field("format", task -> task.format, MappingsFormat.class);
+                var source = builder.field("source", task -> task.source, MappingsSource.class);
+                return values -> new TransformMappings(values.get(name), values.get(format), values.get(source));
+            }
         }
     }
 
