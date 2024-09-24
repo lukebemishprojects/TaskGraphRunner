@@ -18,6 +18,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.stream.Collectors;
 
 public class TransformMappingsTask extends Task {
     private final IMappingFile.Format format;
@@ -50,33 +51,33 @@ public class TransformMappingsTask extends Task {
 
         private static MappingsSourceImpl of(MappingsSource source, WorkItem workItem, Context context, AtomicInteger counter) {
             return switch (source) {
-                case MappingsSource.Chained chained -> new ChainedSource(chained.sources.stream().map(s -> of(s, workItem, context, counter)).toList());
+                case MappingsSource.Chained chained -> new ChainedSource(counter.getAndIncrement(), chained.sources.stream().map(s -> of(s, workItem, context, counter)).toList());
                 case MappingsSource.ChainedFiles chainedFiles -> {
                     List<TaskInput.FileListInput> filesParts = new ArrayList<>();
-                    for (int i = 0; i < chainedFiles.files.size(); i++) {
-                        var part = chainedFiles.files.get(i);
-                        filesParts.add(TaskInput.files("chainedFiles"+counter.getAndIncrement()+"Source" + i, part, workItem, context, PathSensitivity.NONE));
+                    for (var part : chainedFiles.files) {
+                        filesParts.add(TaskInput.files("chainedFilesSource" + counter.getAndIncrement(), part, workItem, context, PathSensitivity.NONE));
                     }
-                    yield new ChainedFiles(new TaskInput.RecursiveFileListInput("chainedFiles"+counter.getAndIncrement(), filesParts));
+                    yield new ChainedFiles(counter.getAndIncrement(), new TaskInput.RecursiveFileListInput("chainedFiles"+counter.getAndIncrement(), filesParts));
                 }
-                case MappingsSource.File file -> new FileSource(TaskInput.file("fileSource" + counter.getAndIncrement(), file.input, workItem, context, PathSensitivity.NONE));
-                case MappingsSource.Merged merged -> new MergedSource(merged.sources.stream().map(s -> of(s, workItem, context, counter)).toList());
+                case MappingsSource.File file -> new FileSource(counter.getAndIncrement(), TaskInput.file("fileSource" + counter.getAndIncrement(), file.input, workItem, context, PathSensitivity.NONE));
+                case MappingsSource.Merged merged -> new MergedSource(counter.getAndIncrement(), merged.sources.stream().map(s -> of(s, workItem, context, counter)).toList());
                 case MappingsSource.MergedFiles mergedFiles -> {
                     List<TaskInput.FileListInput> filesParts = new ArrayList<>();
-                    for (int i = 0; i < mergedFiles.files.size(); i++) {
-                        var part = mergedFiles.files.get(i);
-                        filesParts.add(TaskInput.files("chainedFiles"+counter.getAndIncrement()+"Source" + i, part, workItem, context, PathSensitivity.NONE));
+                    for (var part : mergedFiles.files) {
+                        filesParts.add(TaskInput.files("mergedFilesSource" + counter.getAndIncrement(), part, workItem, context, PathSensitivity.NONE));
                     }
-                    yield new MergedFiles(new TaskInput.RecursiveFileListInput("mergedFiles"+counter.getAndIncrement(), filesParts));
+                    yield new MergedFiles(counter.getAndIncrement(), new TaskInput.RecursiveFileListInput("mergedFiles"+counter.getAndIncrement(), filesParts));
                 }
-                case MappingsSource.Reversed reversed -> new ReverseSource(of(reversed.source, workItem, context, counter));
+                case MappingsSource.Reversed reversed -> new ReverseSource(counter.getAndIncrement(), of(reversed.source, workItem, context, counter));
             };
         }
 
         final class ChainedFiles implements MappingsSourceImpl {
             private final TaskInput.FileListInput files;
+            private final TaskInput.ValueInput label;
 
-            public ChainedFiles(TaskInput.FileListInput files) {
+            public ChainedFiles(int andIncrement, TaskInput.FileListInput files) {
+                this.label = new TaskInput.ValueInput("chainedFilesLabel" + andIncrement, new Value.StringValue("chainedFiles" + andIncrement));
                 this.files = files;
             }
 
@@ -95,14 +96,16 @@ public class TransformMappingsTask extends Task {
 
             @Override
             public List<TaskInput> inputs() {
-                return List.of(files);
+                return List.of(label, files);
             }
         }
 
         final class ChainedSource implements MappingsSourceImpl {
+            private final TaskInput.ValueInput label;
             private final List<MappingsSourceImpl> sources;
 
-            public ChainedSource(List<MappingsSourceImpl> sources) {
+            public ChainedSource(int andIncrement, List<MappingsSourceImpl> sources) {
+                this.label = new TaskInput.ValueInput("chainedLabel" + andIncrement + "_" + sources.size(), new Value.StringValue("chained" + andIncrement));
                 this.sources = sources;
             }
 
@@ -115,16 +118,20 @@ public class TransformMappingsTask extends Task {
 
             @Override
             public List<TaskInput> inputs() {
-                return sources.stream()
+                var list = sources.stream()
                     .flatMap(source -> source.inputs().stream())
-                    .toList();
+                    .collect(Collectors.toCollection(ArrayList::new));
+                list.addFirst(label);
+                return list;
             }
         }
 
         final class MergedFiles implements MappingsSourceImpl {
+            private final TaskInput.ValueInput label;
             private final TaskInput.FileListInput files;
 
-            public MergedFiles(TaskInput.FileListInput files) {
+            public MergedFiles(int andIncrement, TaskInput.FileListInput files) {
+                this.label = new TaskInput.ValueInput("mergedFilesLabel" + andIncrement, new Value.StringValue("mergedFiles" + andIncrement));
                 this.files = files;
             }
 
@@ -143,14 +150,16 @@ public class TransformMappingsTask extends Task {
 
             @Override
             public List<TaskInput> inputs() {
-                return List.of(files);
+                return List.of(label, files);
             }
         }
 
         final class MergedSource implements MappingsSourceImpl {
+            private final TaskInput.ValueInput label;
             private final List<MappingsSourceImpl> sources;
 
-            public MergedSource(List<MappingsSourceImpl> sources) {
+            public MergedSource(int andIncrement, List<MappingsSourceImpl> sources) {
+                this.label = new TaskInput.ValueInput("mergedLabel" + andIncrement + "_" + sources.size(), new Value.StringValue("merged" + andIncrement));
                 this.sources = sources;
             }
 
@@ -163,16 +172,20 @@ public class TransformMappingsTask extends Task {
 
             @Override
             public List<TaskInput> inputs() {
-                return sources.stream()
-                        .flatMap(source -> source.inputs().stream())
-                        .toList();
+                var list = sources.stream()
+                    .flatMap(source -> source.inputs().stream())
+                    .collect(Collectors.toCollection(ArrayList::new));
+                list.addFirst(label);
+                return list;
             }
         }
 
         final class ReverseSource implements MappingsSourceImpl {
+            private final TaskInput.ValueInput label;
             private final MappingsSourceImpl source;
 
-            public ReverseSource(MappingsSourceImpl source) {
+            public ReverseSource(int andIncrement, MappingsSourceImpl source) {
+                this.label = new TaskInput.ValueInput("reverseLabel" + andIncrement, new Value.StringValue("reverse" + andIncrement));
                 this.source = source;
             }
 
@@ -185,14 +198,18 @@ public class TransformMappingsTask extends Task {
 
             @Override
             public List<TaskInput> inputs() {
-                return source.inputs();
+                var list = new ArrayList<>(source.inputs());
+                list.addFirst(label);
+                return list;
             }
         }
 
         final class FileSource implements MappingsSourceImpl {
+            private final TaskInput.ValueInput label;
             private final TaskInput.HasFileInput input;
 
-            public FileSource(TaskInput.HasFileInput input) {
+            public FileSource(int andIncrement, TaskInput.HasFileInput input) {
+                this.label = new TaskInput.ValueInput("fileLabel" + andIncrement, new Value.StringValue("file" + andIncrement));
                 this.input = input;
             }
 
@@ -207,7 +224,7 @@ public class TransformMappingsTask extends Task {
 
             @Override
             public List<TaskInput> inputs() {
-                return List.of(input);
+                return List.of(label, input);
             }
         }
     }

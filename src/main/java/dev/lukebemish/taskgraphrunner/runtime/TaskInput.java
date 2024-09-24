@@ -231,6 +231,9 @@ public sealed interface TaskInput extends RecordedInput {
 
         @Override
         public void hashReference(ByteConsumer digest, Context context) {
+            ByteBuffer buffer = ByteBuffer.allocate(Integer.BYTES);
+            buffer.putInt(inputs.size());
+            digest.update(buffer);
             for (FileListInput input : inputs) {
                 input.hashReference(digest, context);
             }
@@ -238,6 +241,9 @@ public sealed interface TaskInput extends RecordedInput {
 
         @Override
         public void hashContents(ByteConsumer digest, Context context) {
+            ByteBuffer buffer = ByteBuffer.allocate(Integer.BYTES);
+            buffer.putInt(inputs.size());
+            digest.update(buffer);
             for (FileListInput input : inputs) {
                 input.hashContents(digest, context);
             }
@@ -261,6 +267,9 @@ public sealed interface TaskInput extends RecordedInput {
     record SimpleFileListInput(String name, List<HasFileInput> inputs) implements FileListInput {
         @Override
         public void hashReference(ByteConsumer digest, Context context) {
+            ByteBuffer buffer = ByteBuffer.allocate(Integer.BYTES);
+            buffer.putInt(inputs.size());
+            digest.update(buffer);
             for (HasFileInput input : inputs) {
                 input.hashReference(digest, context);
             }
@@ -268,6 +277,9 @@ public sealed interface TaskInput extends RecordedInput {
 
         @Override
         public void hashContents(ByteConsumer digest, Context context) {
+            ByteBuffer buffer = ByteBuffer.allocate(Integer.BYTES);
+            buffer.putInt(inputs.size());
+            digest.update(buffer);
             for (HasFileInput input : inputs) {
                 input.hashContents(digest, context);
             }
