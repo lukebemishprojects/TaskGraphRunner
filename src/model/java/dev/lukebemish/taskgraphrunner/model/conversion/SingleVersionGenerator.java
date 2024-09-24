@@ -296,6 +296,8 @@ public final class SingleVersionGenerator {
             sourcesTask = new Output("jstTransform", "output");
         }
 
+        config.aliases.put("binarySourceIndependent", binariesTask);
+
         var fixLineNumbers = new TaskModel.Tool(
             "fixLineNumbers",
             List.of(
