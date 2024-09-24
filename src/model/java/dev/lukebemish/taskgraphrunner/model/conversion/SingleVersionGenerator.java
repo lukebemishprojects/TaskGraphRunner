@@ -11,6 +11,7 @@ import dev.lukebemish.taskgraphrunner.model.Value;
 import org.jspecify.annotations.Nullable;
 
 import java.io.IOException;
+import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -24,7 +25,7 @@ public final class SingleVersionGenerator {
         private final Distribution distribution;
         private final @Nullable SidedAnnotation sidedAnnotation;
 
-        public enum SidedAnnotation {
+        public enum SidedAnnotation implements Serializable {
             CPW("CPW"),
             NMF("NMF"),
             NEO("API"),
