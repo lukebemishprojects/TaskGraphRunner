@@ -41,6 +41,9 @@ public class Vanilla implements Runnable {
     @CommandLine.Option(names = "--parchment-data", description = "Parchment data, as artifact:<artifact ID> or file:path form.")
     String parchmentData = null;
 
+    @CommandLine.Option(names = "--sided-annotation", description = "Annotation to use for sidedness.")
+    SingleVersionGenerator.Options.SidedAnnotation sidedAnnotation;
+
     Vanilla(Main main) {
         this.main = main;
     }
@@ -48,7 +51,8 @@ public class Vanilla implements Runnable {
     @Override
     public void run() {
         try {
-            var optionsBuilder = SingleVersionGenerator.Options.builder();
+            var optionsBuilder = SingleVersionGenerator.Options.builder()
+                .sidedAnnotation(sidedAnnotation);
             if (!accessTransformers.isEmpty()) {
                 optionsBuilder.accessTransformersParameter("accessTransformers");
             }

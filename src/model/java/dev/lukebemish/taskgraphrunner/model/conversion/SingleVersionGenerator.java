@@ -22,12 +22,31 @@ public final class SingleVersionGenerator {
         private final @Nullable String injectedInterfacesParameter;
         private final @Nullable String parchmentDataParameter;
         private final Distribution distribution;
+        private final @Nullable SidedAnnotation sidedAnnotation;
 
-        private Options(@Nullable String accessTransformersParameter, @Nullable String injectedInterfacesParameter, @Nullable String parchmentDataParameter, Distribution distribution) {
+        public enum SidedAnnotation {
+            CPW("CPW"),
+            NMF("NMF"),
+            NEO("API"),
+            FABRIC("FABRIC");
+
+            private final String argument;
+
+            SidedAnnotation(String argument) {
+                this.argument = argument;
+            }
+
+            private String argument() {
+                return argument;
+            }
+        }
+
+        private Options(@Nullable String accessTransformersParameter, @Nullable String injectedInterfacesParameter, @Nullable String parchmentDataParameter, Distribution distribution, @Nullable SidedAnnotation sidedAnnotation) {
             this.accessTransformersParameter = accessTransformersParameter;
             this.injectedInterfacesParameter = injectedInterfacesParameter;
             this.parchmentDataParameter = parchmentDataParameter;
             this.distribution = distribution;
+            this.sidedAnnotation = sidedAnnotation;
         }
 
         public static Builder builder() {
@@ -39,6 +58,7 @@ public final class SingleVersionGenerator {
             private String injectedInterfacesParameter = null;
             private String parchmentDataParameter = null;
             private Distribution distribution = Distribution.JOINED;
+            private SidedAnnotation sidedAnnotation;
 
             private Builder() {}
 
@@ -62,8 +82,13 @@ public final class SingleVersionGenerator {
                 return this;
             }
 
+            public Builder sidedAnnotation(@Nullable SidedAnnotation sidedAnnotation) {
+                this.sidedAnnotation = sidedAnnotation;
+                return this;
+            }
+
             public Options build() {
-                return new Options(accessTransformersParameter, injectedInterfacesParameter, parchmentDataParameter, distribution);
+                return new Options(accessTransformersParameter, injectedInterfacesParameter, parchmentDataParameter, distribution, sidedAnnotation);
             }
         }
     }
@@ -135,7 +160,7 @@ public final class SingleVersionGenerator {
                         Argument.direct("--server"),
                         new Argument.FileInput(null, new Input.TaskInput(new Output("stripServer", "output")), PathSensitivity.NONE),
                         Argument.direct("--ann"),
-                        Argument.direct(version),
+                        options.sidedAnnotation == null ? Argument.direct(version) : Argument.direct(options.sidedAnnotation.argument()),
                         Argument.direct("--output"),
                         new Argument.FileOutput(null, "output", "jar"),
                         Argument.direct("--inject"),
