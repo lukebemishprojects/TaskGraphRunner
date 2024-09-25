@@ -32,7 +32,7 @@ public class JstTask extends JavaTask {
     private final Map<String, String> outputExtensions;
 
     public JstTask(TaskModel.Jst model, WorkItem workItem, Context context) {
-        super(model.name());
+        super(model.name(), model.type());
 
         this.inputs = new ArrayList<>();
 
@@ -103,7 +103,7 @@ public class JstTask extends JavaTask {
         command.add("net.neoforged.jst.cli.Main");
 
         command.add(input.path(context).toAbsolutePath().toString());
-        command.add(context.taskOutputPath(name(), "output").toAbsolutePath().toString());
+        command.add(context.taskOutputPath(this, "output").toAbsolutePath().toString());
 
         command.add("--classpath="+classpath.classpath(context));
         command.add("--in-format=ARCHIVE");
@@ -121,7 +121,7 @@ public class JstTask extends JavaTask {
             for (var path : interfaceInjection.paths(context)) {
                 command.add("--interface-injection-data="+path.toAbsolutePath());
             }
-            command.add("--interface-injection-stubs="+context.taskOutputPath(name(), "stubs"));
+            command.add("--interface-injection-stubs="+context.taskOutputPath(this, "stubs"));
         }
 
         if (parchmentData != null) {
@@ -140,7 +140,7 @@ public class JstTask extends JavaTask {
         super.run(context);
         if (this.interfaceInjection == null || this.interfaceInjection.paths(context).isEmpty()) {
             // Make an empty stubs zip
-            var path = context.taskOutputPath(name(), "stubs");
+            var path = context.taskOutputPath(this, "stubs");
             try (var os = Files.newOutputStream(path);
                  var zos = new ZipOutputStream(os)) {
                 zos.flush();

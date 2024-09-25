@@ -35,18 +35,23 @@ import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.locks.ReentrantLock;
 
 public abstract class Task implements RecordedInput {
     private static final Logger LOGGER = LoggerFactory.getLogger(Task.class);
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
 
     private final String name;
+    private final String type;
 
-    public Task(String name) {
+    public Task(String name, String type) {
         this.name = name;
+        this.type = type;
     }
 
     public String name() {
@@ -67,22 +72,29 @@ public abstract class Task implements RecordedInput {
         return 1;
     }
 
-    synchronized void execute(Context context, Map<String, Path> outputDestinations) {
-        // This operation is NOT locked; locking is handled for a full invocation execution instead
-        execute(context);
-        for (var entry : outputDestinations.entrySet()) {
-            var outputPath = context.taskOutputPath(name(), entry.getKey());
-            try {
-                Files.copy(outputPath, entry.getValue(), StandardCopyOption.REPLACE_EXISTING);
-            } catch (IOException e) {
-                throw new UncheckedIOException(e);
+    private final ReentrantLock executionLock = new ReentrantLock();
+
+    void execute(Context context, Map<String, Path> outputDestinations) {
+        executionLock.lock();
+        try {
+            // This operation is NOT locked; locking is handled for a full invocation execution instead
+            execute(context);
+            for (var entry : outputDestinations.entrySet()) {
+                var outputPath = context.taskOutputPath(this, entry.getKey());
+                try {
+                    Files.copy(outputPath, entry.getValue(), StandardCopyOption.REPLACE_EXISTING);
+                } catch (IOException e) {
+                    throw new UncheckedIOException(e);
+                }
             }
+        } finally {
+            executionLock.unlock();
         }
     }
 
-    private synchronized void execute(Context context) {
+    private void execute(Context context) {
+        executionLock.lock();
         try {
-            // This operation is NOT locked; locking is handled for a full invocation execution instead
             if (executed) {
                 return;
             }
@@ -91,12 +103,12 @@ public abstract class Task implements RecordedInput {
             }
             running = true;
             // Run prerequisite tasks
-            inputs().parallelStream().forEach(input ->
-                input.dependencies().parallelStream().forEach(dependency ->
+            context.execute(inputs(), input ->
+                context.execute(input.dependencies(), dependency ->
                     context.getTask(dependency).execute(context)
                 )
             );
-            var statePath = context.taskStatePath(name());
+            var statePath = context.taskStatePath(this);
             try {
                 Files.createDirectories(statePath.getParent());
             } catch (IOException e) {
@@ -120,7 +132,7 @@ public abstract class Task implements RecordedInput {
                             break;
                         }
                         var oldHash = oldHashElement.getAsString();
-                        var outputPath = context.taskOutputPath(name(), output);
+                        var outputPath = context.taskOutputPath(this, output);
                         if (!Files.exists(outputPath)) {
                             allOutputsMatch = false;
                             break;
@@ -155,24 +167,30 @@ public abstract class Task implements RecordedInput {
             running = false;
         } catch (Exception e) {
             throw new RuntimeException("Exception in task "+name(),e);
+        } finally {
+            executionLock.unlock();
         }
     }
 
     private void updateState(JsonObject oldState, Context context) {
         oldState.add("lastAccessed", new JsonPrimitive(System.currentTimeMillis()));
-        try (var writer = Files.newBufferedWriter(context.taskStatePath(name()), StandardCharsets.UTF_8)) {
+        try (var writer = Files.newBufferedWriter(context.taskStatePath(this), StandardCharsets.UTF_8)) {
             GSON.toJson(oldState, writer);
         } catch (IOException e) {
             throw new RuntimeException(e);
         }
     }
 
+    public final String type() {
+        return type;
+    }
+
     private void saveState(Context context) {
-        var statePath = context.taskStatePath(name());
+        var statePath = context.taskStatePath(this);
         var inputState = recordedValue(context);
         JsonObject outputHashes = new JsonObject();
         for (var output : outputTypes().keySet()) {
-            var outputPath = context.taskOutputPath(name(), output);
+            var outputPath = context.taskOutputPath(this, output);
             if (Files.exists(outputPath)) {
                 try {
                     var hash = HashUtils.hash(outputPath);
@@ -204,9 +222,8 @@ public abstract class Task implements RecordedInput {
                 if (referenceHash == null) {
                     var stream = new ByteArrayOutputStream();
                     var consumer = ByteConsumer.of(stream);
-                    consumer.update(getClass().getName().getBytes(StandardCharsets.UTF_8));
+                    consumer.update(type().getBytes(StandardCharsets.UTF_8));
                     consumer.update(((Integer) cacheVersion()).byteValue());
-                    consumer.update(name().getBytes(StandardCharsets.UTF_8));
                     for (TaskInput input : inputs()) {
                         consumer.update(input.name().getBytes(StandardCharsets.UTF_8));
                         input.hashReference(consumer, context);
@@ -225,10 +242,11 @@ public abstract class Task implements RecordedInput {
                 if (contentsHash == null) {
                     var stream = new ByteArrayOutputStream();
                     var consumer = ByteConsumer.of(stream);
-                    consumer.update(getClass().getName().getBytes(StandardCharsets.UTF_8));
+                    consumer.update(type().getBytes(StandardCharsets.UTF_8));
                     consumer.update(((Integer) cacheVersion()).byteValue());
-                    consumer.update(name().getBytes(StandardCharsets.UTF_8));
-                    for (TaskInput input : inputs()) {
+                    var sortedInputs = new ArrayList<>(inputs());
+                    sortedInputs.sort(Comparator.comparing(TaskInput::name));
+                    for (TaskInput input : sortedInputs) {
                         for (var dependency : input.dependencies()) {
                             if (!context.getTask(dependency).executed) {
                                 throw new IllegalStateException("Dependency `"+dependency+"` of task `"+name()+"` has not been executed but was requested");

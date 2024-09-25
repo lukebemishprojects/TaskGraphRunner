@@ -114,11 +114,7 @@ public sealed interface TaskInput extends RecordedInput {
         @Override
         public void hashContents(ByteConsumer digest, Context context) {
             HasFileInput.super.hashContents(digest, context);
-            try {
-                HashUtils.hash(path, digest);
-            } catch (IOException e) {
-                throw new UncheckedIOException(e);
-            }
+            HashUtils.hash(path, digest);
         }
 
         @Override
@@ -143,18 +139,11 @@ public sealed interface TaskInput extends RecordedInput {
     record TaskOutputInput(String name, TaskOutput output) implements HasFileInput {
 
         @Override
-        public void hashReference(ByteConsumer digest, Context context) {
-            digest.update(output.taskName().getBytes(StandardCharsets.UTF_8));
-            digest.update(output.name().getBytes(StandardCharsets.UTF_8));
-        }
+        public void hashReference(ByteConsumer digest, Context context) {}
 
         @Override
         public void hashContents(ByteConsumer digest, Context context) {
-            try {
-                HashUtils.hash(output.getPath(context), digest);
-            } catch (IOException e) {
-                throw new UncheckedIOException(e);
-            }
+            HashUtils.hash(output.getPath(context), digest);
         }
 
         @Override
@@ -166,14 +155,13 @@ public sealed interface TaskInput extends RecordedInput {
         public JsonElement recordedValue(Context context) {
             JsonObject object = new JsonObject();
             object.addProperty("type", "taskOutput");
-            object.addProperty("task", output.taskName());
-            object.addProperty("output", output.name());
+            object.addProperty("task_type", context.getTask(output.taskName()).type());
             return object;
         }
 
         @Override
         public Path path(Context context) {
-            return context.taskOutputPath(output.taskName(), output.name());
+            return context.taskOutputPath(context.getTask(output.taskName()), output.name());
         }
     }
 
@@ -201,11 +189,7 @@ public sealed interface TaskInput extends RecordedInput {
         public void hashContents(ByteConsumer digest, Context context) {
             var paths = paths(context);
             for (Path path : paths) {
-                try {
-                    HashUtils.hash(path, digest);
-                } catch (IOException e) {
-                    throw new UncheckedIOException(e);
-                }
+                HashUtils.hash(path, digest);
             }
         }
 

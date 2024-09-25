@@ -22,7 +22,7 @@ public class DownloadJsonTask extends Task {
     private final TaskInput.ValueInput version;
 
     public DownloadJsonTask(TaskModel.DownloadJson model, WorkItem workItem, Context context) {
-        super(model.name());
+        super(model.name(), model.type());
         this.manifest = TaskInput.file("manifest", model.manifest, workItem, context, PathSensitivity.NONE);
         this.version = TaskInput.value("version", model.version, workItem);
     }
@@ -53,7 +53,7 @@ public class DownloadJsonTask extends Task {
             var sha1 = version.get("sha1").getAsString();
             var url = version.get("url").getAsString();
             var spec = new DownloadUtils.Spec.Checksum(new URI(url), sha1, "SHA-1");
-            var output = context.taskOutputPath(name(), "output");
+            var output = context.taskOutputPath(this, "output");
             DownloadUtils.download(spec, output);
         } catch (IOException | URISyntaxException e) {
             throw new RuntimeException(e);

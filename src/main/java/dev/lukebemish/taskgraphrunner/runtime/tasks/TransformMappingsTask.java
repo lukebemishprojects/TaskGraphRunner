@@ -26,7 +26,7 @@ public class TransformMappingsTask extends Task {
     private final TaskInput.ValueInput formatValue;
 
     public TransformMappingsTask(TaskModel.TransformMappings model, WorkItem workItem, Context context) {
-        super(model.name());
+        super(model.name(), model.type());
         this.format = getFormat(model.format);
         this.formatValue = new TaskInput.ValueInput("format", new Value.StringValue(format.name()));
         this.source = MappingsSourceImpl.of(model.source, workItem, context, new AtomicInteger());
@@ -253,7 +253,7 @@ public class TransformMappingsTask extends Task {
     protected void run(Context context) {
         IMappingFile mappings = source.makeMappings(context);
         try {
-            mappings.write(context.taskOutputPath(this.name(), "output"), format, false);
+            mappings.write(context.taskOutputPath(this, "output"), format, false);
         } catch (IOException e) {
             throw new RuntimeException(e);
         }

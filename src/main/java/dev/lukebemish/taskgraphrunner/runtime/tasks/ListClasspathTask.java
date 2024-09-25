@@ -24,7 +24,7 @@ public class ListClasspathTask extends Task {
     private final TaskInput.ValueInput additionalLibraries;
 
     public ListClasspathTask(TaskModel.ListClasspath model, WorkItem workItem, Context context) {
-        super(model.name());
+        super(model.name(), model.type());
         this.versionJson = TaskInput.file("versionJson", model.versionJson, workItem, context, PathSensitivity.NONE);
         if (model.additionalLibraries == null) {
             this.additionalLibraries = new TaskInput.ValueInput("additionalLibraries", new Value.ListValue(List.of()));
@@ -46,7 +46,7 @@ public class ListClasspathTask extends Task {
     @Override
     protected void run(Context context) {
         var versionManifest = versionJson.path(context);
-        var output = context.taskOutputPath(name(), "output");
+        var output = context.taskOutputPath(this, "output");
 
         try (var reader = Files.newBufferedReader(versionManifest)) {
             var json = JsonUtils.GSON.fromJson(reader, JsonObject.class);

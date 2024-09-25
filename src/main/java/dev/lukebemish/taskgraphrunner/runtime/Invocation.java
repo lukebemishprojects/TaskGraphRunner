@@ -13,8 +13,14 @@ import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.Callable;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.atomic.AtomicInteger;
 
-public class Invocation implements Context {
+public class Invocation implements Context, AutoCloseable {
     private final Path cacheDirectory;
 
     private final LockManager lockManager;
@@ -24,6 +30,8 @@ public class Invocation implements Context {
     private final ArtifactManifest artifactManifest = ArtifactManifest.delegating(artifactManifests);
     private final boolean useCached;
     private final AssetDownloadOptions assetOptions;
+    private final AtomicInteger threadCounter = new AtomicInteger(1);
+    private final ExecutorService executor = Executors.newThreadPerTaskExecutor(Thread.ofVirtual().name("TaskGraphRunner-", 1).factory());
 
     public Invocation(Path cacheDirectory, AssetDownloadOptions assetDownloadOptions, boolean useCached) throws IOException {
         this.cacheDirectory = cacheDirectory;
@@ -41,11 +49,10 @@ public class Invocation implements Context {
     }
 
     @Override
-    public Path taskOutputPath(String taskName, String outputName) {
-        var task = getTask(taskName);
+    public Path taskOutputPath(Task task, String outputName) {
         var outputType = task.outputTypes().get(outputName);
         if (outputType == null) {
-            throw new IllegalArgumentException("No such output `"+outputName+"` for task `"+taskName+"`");
+            throw new IllegalArgumentException("No such output `"+outputName+"` for task `"+task.name()+"`");
         }
         MessageDigest digestContents;
         try {
@@ -55,12 +62,11 @@ public class Invocation implements Context {
         }
         task.hashContents(RecordedInput.ByteConsumer.of(digestContents), this);
         var contentsHash = HexFormat.of().formatHex(digestContents.digest());
-        return taskDirectory(taskName).resolve(contentsHash+"."+outputName+"."+outputType);
+        return taskDirectory(task).resolve(contentsHash+"."+outputName+"."+outputType);
     }
 
     @Override
-    public Path taskDirectory(String taskName) {
-        var task = getTask(taskName);
+    public Path taskDirectory(Task task) {
         MessageDigest digestReference;
         try {
             digestReference = MessageDigest.getInstance("MD5");
@@ -69,12 +75,11 @@ public class Invocation implements Context {
         }
         task.hashReference(RecordedInput.ByteConsumer.of(digestReference), this);
         var hash = HexFormat.of().formatHex(digestReference.digest());
-        return cacheDirectory.resolve("results").resolve(taskName+"."+hash);
+        return cacheDirectory.resolve("results").resolve(task.type() +"."+hash);
     }
 
     @Override
-    public Path taskStatePath(String taskName) {
-        var task = getTask(taskName);
+    public Path taskStatePath(Task task) {
         MessageDigest digestContents;
         try {
             digestContents = MessageDigest.getInstance("MD5");
@@ -83,12 +88,11 @@ public class Invocation implements Context {
         }
         task.hashContents(RecordedInput.ByteConsumer.of(digestContents), this);
         var contentsHash = HexFormat.of().formatHex(digestContents.digest());
-        return taskDirectory(taskName).resolve(contentsHash+".json");
+        return taskDirectory(task).resolve(contentsHash+".json");
     }
 
     @Override
-    public Path taskWorkingDirectory(String taskName) {
-        var task = getTask(taskName);
+    public Path taskWorkingDirectory(Task task) {
         MessageDigest digestContents;
         try {
             digestContents = MessageDigest.getInstance("MD5");
@@ -97,7 +101,7 @@ public class Invocation implements Context {
         }
         task.hashContents(RecordedInput.ByteConsumer.of(digestContents), this);
         var contentsHash = HexFormat.of().formatHex(digestContents.digest());
-        return taskDirectory(taskName).resolve(contentsHash);
+        return taskDirectory(task).resolve(contentsHash);
     }
 
     @Override
@@ -134,6 +138,31 @@ public class Invocation implements Context {
         return this.assetOptions;
     }
 
+    public Future<?> submit(Runnable runnable) {
+        var future = new CompletableFuture<>();
+        Thread.ofVirtual().name("TaskGraphRunner-"+threadCounter.getAndIncrement()).start(() -> {
+            try {
+                runnable.run();
+                future.complete(null);
+            } catch (Exception e) {
+                future.completeExceptionally(e);
+            }
+        });
+        return future;
+    }
+
+    public <T> Future<T> submit(Callable<T> callable) {
+        var future = new CompletableFuture<T>();
+        Thread.ofVirtual().name("TaskGraphRunner-"+threadCounter.getAndIncrement()).start(() -> {
+            try {
+                future.complete(callable.call());
+            } catch (Exception e) {
+                future.completeExceptionally(e);
+            }
+        });
+        return future;
+    }
+
     public void execute(Map<Output, Path> results) {
         Map<String, Map<String, Path>> tasks = new LinkedHashMap<>();
         for (var entry : results.entrySet()) {
@@ -142,10 +171,15 @@ public class Invocation implements Context {
             map.put(entry.getKey().name(), entry.getValue());
         }
         try (var ignored = locks(tasks.keySet())) {
-            tasks.entrySet().parallelStream().forEach(entry -> {
+            execute(tasks.entrySet(), entry -> {
                 var task = getTask(entry.getKey());
                 task.execute(this, entry.getValue());
             });
         }
+    }
+
+    @Override
+    public void close() {
+        executor.close();
     }
 }

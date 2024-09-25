@@ -37,7 +37,7 @@ public class InterfaceInjectionTask extends Task {
     private final TaskInput.FileListInput classpath;
 
     public InterfaceInjectionTask(TaskModel.InterfaceInjection model, WorkItem workItem, Context context) {
-        super(model.name());
+        super(model.name(), model.type());
         this.input = TaskInput.file("input", model.input, workItem, context, PathSensitivity.NONE);
         this.interfaceInjection = TaskInput.files("interfaceInjection", model.interfaceInjection, workItem, context, PathSensitivity.NONE);
 
@@ -285,8 +285,8 @@ public class InterfaceInjectionTask extends Task {
     @SuppressWarnings("unchecked")
     @Override
     protected void run(Context context) {
-        var outputJar = context.taskOutputPath(name(), "output");
-        var stubsJar = context.taskOutputPath(name(), "stubs");
+        var outputJar = context.taskOutputPath(this, "output");
+        var stubsJar = context.taskOutputPath(this, "stubs");
         var inputJar = this.input.path(context);
 
         Map<String, List<InjectionData>> injections = new HashMap<>();

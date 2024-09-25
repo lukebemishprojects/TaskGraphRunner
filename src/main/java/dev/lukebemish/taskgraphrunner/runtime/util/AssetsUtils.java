@@ -6,6 +6,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.net.URI;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -15,19 +16,13 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.ExecutionException;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
-import java.util.concurrent.Semaphore;
 
 public final class AssetsUtils {
     private static final String INDEX_FOLDER = "indexes";
     private static final String OBJECT_FOLDER = "objects";
     private static final String ASSETS_BASE_URL = "https://resources.download.minecraft.net/";
-    private static final int MAX_CONCURRENT_DOWNLOADS = 25;
     private static final Logger LOGGER = LoggerFactory.getLogger(AssetsUtils.class);
-    private static final ExecutorService DOWNLOAD_EXECUTOR = Executors.newThreadPerTaskExecutor(Thread.ofVirtual().name("download-assets", 1).factory());
-    private static final Semaphore DOWNLOAD_SEMAPHORE = new Semaphore(MAX_CONCURRENT_DOWNLOADS);
 
     // Sort from most to least indexes
     private static final Comparator<Target> ASSET_INDEX_COUNT_DESCENDING = Comparator.<Target>comparingInt(d -> d.indexes.size()).reversed();
@@ -105,14 +100,12 @@ public final class AssetsUtils {
             try (var ignored = context.lockManager().lockSingleFiles(targets.stream().map(DownloadTarget::target).toList())) {
                 var futures = new ArrayList<Future<?>>();
                 for (var target : targets) {
-                    futures.add(DOWNLOAD_EXECUTOR.submit(() -> {
+                    futures.add(context.submit(() -> {
                         try {
-                            DOWNLOAD_SEMAPHORE.acquire();
                             DownloadUtils.download(target.spec(), target.target());
-                        } catch (IOException | InterruptedException e) {
-                            LOGGER.error("Failed to download asset " + target.name(), e);
-                        } finally {
-                            DOWNLOAD_SEMAPHORE.release();
+                        } catch (IOException e) {
+                            LOGGER.error("Failed to download asset {}", target.name(), e);
+                            throw new UncheckedIOException(e);
                         }
                     }));
                 }

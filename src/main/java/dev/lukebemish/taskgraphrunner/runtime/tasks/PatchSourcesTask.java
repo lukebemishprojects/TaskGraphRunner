@@ -17,7 +17,7 @@ public class PatchSourcesTask extends JavaTask {
     private final TaskInput.HasFileInput patches;
 
     public PatchSourcesTask(TaskModel.PatchSources model, WorkItem workItem, Context context) {
-        super(model.name());
+        super(model.name(), model.type());
         this.input = TaskInput.file("input", model.input, workItem, context, PathSensitivity.NONE);
         this.patches = TaskInput.file("patches", model.patches, workItem, context, PathSensitivity.NONE);
     }
@@ -41,11 +41,11 @@ public class PatchSourcesTask extends JavaTask {
             input.path(context).toAbsolutePath().toString(), patches.path(context).toAbsolutePath().toString(),
             "--patch",
             "--archive", "ZIP",
-            "--output", context.taskOutputPath(name(), "output").toAbsolutePath().toString(),
+            "--output", context.taskOutputPath(this, "output").toAbsolutePath().toString(),
             "--log-level", "WARN",
             "--mode", "OFFSET",
             "--archive-rejects", "ZIP",
-            "--reject", context.taskOutputPath(name(), "rejects").toAbsolutePath().toString()
+            "--reject", context.taskOutputPath(this, "rejects").toAbsolutePath().toString()
         ));
     }
 }

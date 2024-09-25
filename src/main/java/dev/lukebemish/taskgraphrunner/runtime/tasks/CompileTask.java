@@ -40,7 +40,7 @@ public class CompileTask extends Task {
     private final TaskInput.FileListInput sourcepath;
 
     public CompileTask(TaskModel.Compile model, WorkItem workItem, Context context) {
-        super(model.name());
+        super(model.name(), model.type());
 
         this.outputExtensions = new HashMap<>();
         outputExtensions.put("output", "jar");
@@ -81,7 +81,7 @@ public class CompileTask extends Task {
     protected void run(Context context) {
         var sourcesJar = this.sources.path(context);
 
-        var workingDirectory = context.taskWorkingDirectory(name());
+        var workingDirectory = context.taskWorkingDirectory(this);
         var logFile = workingDirectory.resolve("log.txt");
         try {
             Files.createDirectories(workingDirectory);
@@ -147,7 +147,7 @@ public class CompileTask extends Task {
                 }
             };
 
-            var outputJar = context.taskOutputPath(name(), "output");
+            var outputJar = context.taskOutputPath(this, "output");
             if (Files.exists(outputJar)) {
                 Files.delete(outputJar);
             }

@@ -25,7 +25,7 @@ public class RetrieveDataTask extends Task {
     private final boolean isMakingZip;
 
     public RetrieveDataTask(TaskModel.RetrieveData model, WorkItem workItem, Context context) {
-        super(model.name());
+        super(model.name(), model.type());
         this.input = TaskInput.file("input", model.input, workItem, context, PathSensitivity.NONE);
         this.path = TaskInput.value("path", model.path, workItem);
         var pathToFind = path.value();
@@ -57,7 +57,7 @@ public class RetrieveDataTask extends Task {
         var pathString = ((Value.StringValue) path.value()).value();
         if (isMakingZip) {
             try (var is = new BufferedInputStream(Files.newInputStream(input.path(context)));
-                 var os = Files.newOutputStream(context.taskOutputPath(name(), "output"));
+                 var os = Files.newOutputStream(context.taskOutputPath(this, "output"));
                  var zis = new ZipInputStream(is);
                  var zos = new ZipOutputStream(os)
             ) {
@@ -93,7 +93,7 @@ public class RetrieveDataTask extends Task {
             }
         } else {
             try (var is = new BufferedInputStream(Files.newInputStream(input.path(context)));
-                 var os = Files.newOutputStream(context.taskOutputPath(name(), "output"));
+                 var os = Files.newOutputStream(context.taskOutputPath(this, "output"));
                  var zis = new ZipInputStream(is)) {
                 boolean found = false;
                 ZipEntry entry;

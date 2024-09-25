@@ -24,7 +24,7 @@ public class InjectSourcesTask extends Task {
     private final List<TaskInput.HasFileInput> inputs;
 
     public InjectSourcesTask(TaskModel.InjectSources model, WorkItem workItem, Context context) {
-        super(model.name());
+        super(model.name(), model.type());
         this.inputs = new ArrayList<>();
         int count = 0;
         for (var input : model.inputs) {
@@ -46,7 +46,7 @@ public class InjectSourcesTask extends Task {
     @Override
     protected void run(Context context) {
         Set<String> names = new HashSet<>();
-        try (var os = Files.newOutputStream(context.taskOutputPath(name(), "output"));
+        try (var os = Files.newOutputStream(context.taskOutputPath(this, "output"));
              var zos = new JarOutputStream(os)) {
             for (var input : inputs) {
                 try (var is = new BufferedInputStream(Files.newInputStream(input.path(context)));

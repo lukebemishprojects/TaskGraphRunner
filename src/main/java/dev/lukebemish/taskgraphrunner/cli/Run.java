@@ -124,20 +124,21 @@ public class Run implements Runnable {
                     launcherDirs.addAll(this.launcherDirs);
                 }
                 assetsOptions.potentialLauncherRoots(launcherDirs);
-                Invocation invocation = new Invocation(main.cacheDir, assetsOptions.build(), useCache);
-                invocation.artifactManifest(main.makeManifest());
-                for (var model : config.tasks) {
-                    var task = Task.task(model, workItem, invocation);
-                    invocation.addTask(task);
+                try (Invocation invocation = new Invocation(main.cacheDir, assetsOptions.build(), useCache)) {
+                    invocation.artifactManifest(main.makeManifest());
+                    for (var model : config.tasks) {
+                        var task = Task.task(model, workItem, invocation);
+                        invocation.addTask(task);
+                    }
+                    Map<Output, Path> results = new HashMap<>();
+                    for (var entry : workItem.results.entrySet()) {
+                        results.put(switch (entry.getKey()) {
+                            case WorkItem.Target.AliasTarget aliasTarget -> config.aliases.get(aliasTarget.alias());
+                            case WorkItem.Target.OutputTarget outputTarget -> outputTarget.output();
+                        }, entry.getValue());
+                    }
+                    invocation.execute(results);
                 }
-                Map<Output, Path> results = new HashMap<>();
-                for (var entry : workItem.results.entrySet()) {
-                    results.put(switch (entry.getKey()) {
-                        case WorkItem.Target.AliasTarget aliasTarget -> config.aliases.get(aliasTarget.alias());
-                        case WorkItem.Target.OutputTarget outputTarget -> outputTarget.output();
-                    }, entry.getValue());
-                }
-                invocation.execute(results);
             }
         } catch (IOException e) {
             throw new UncheckedIOException(e);

@@ -13,8 +13,8 @@ import java.util.ArrayList;
 import java.util.List;
 
 public abstract class JavaTask extends Task {
-    public JavaTask(String name) {
-        super(name);
+    public JavaTask(String name, String type) {
+        super(name, type);
     }
 
     @Override
@@ -26,7 +26,7 @@ public abstract class JavaTask extends Task {
 
         var command = new ArrayList<String>();
 
-        var workingDirectory = context.taskWorkingDirectory(name());
+        var workingDirectory = context.taskWorkingDirectory(this);
         try {
             Files.createDirectories(workingDirectory);
         } catch (IOException e) {

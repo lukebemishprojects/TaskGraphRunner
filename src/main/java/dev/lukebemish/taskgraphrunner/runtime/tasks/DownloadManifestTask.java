@@ -20,7 +20,7 @@ public class DownloadManifestTask extends Task {
     private static final Logger LOGGER = LoggerFactory.getLogger(DownloadManifestTask.class);
 
     public DownloadManifestTask(TaskModel.DownloadManifest model) {
-        super(model.name());
+        super(model.name(), model.type());
     }
 
     @Override
@@ -35,7 +35,7 @@ public class DownloadManifestTask extends Task {
 
     @Override
     protected void run(Context context) {
-        Path outputPath = context.taskOutputPath(name(), "output");
+        Path outputPath = context.taskOutputPath(this, "output");
 
         boolean exists = Files.exists(outputPath);
 

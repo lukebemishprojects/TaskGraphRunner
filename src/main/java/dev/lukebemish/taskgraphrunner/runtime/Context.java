@@ -4,19 +4,23 @@ import dev.lukebemish.taskgraphrunner.runtime.util.LockManager;
 
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
+import java.util.concurrent.Callable;
+import java.util.concurrent.Future;
+import java.util.function.Consumer;
 
 public interface Context {
-    Path taskOutputPath(String taskName, String outputName);
+    Path taskOutputPath(Task task, String outputName);
 
-    Path taskStatePath(String taskName);
+    Path taskStatePath(Task task);
 
-    Path taskDirectory(String taskName);
+    Path taskDirectory(Task task);
 
-    Path taskWorkingDirectory(String taskName);
+    Path taskWorkingDirectory(Task task);
 
     Task getTask(String name);
 
@@ -51,7 +55,7 @@ public interface Context {
     private LockManager.Locks locks0(Set<String> tasks) {
         List<String> keys = new ArrayList<>();
         for (String task : tasks) {
-            keys.add(taskDirectory(task).getFileName().toString());
+            keys.add(taskDirectory(getTask(task)).getFileName().toString());
         }
         return lockManager().locks(keys);
     }
@@ -59,6 +63,24 @@ public interface Context {
     boolean useCached();
 
     AssetDownloadOptions assetOptions();
+
+    Future<?> submit(Runnable runnable);
+
+    <T> Future<T> submit(Callable<T> callable);
+
+    default <T> void execute(Collection<T> objects, Consumer<T> action) {
+        var futures = new ArrayList<Future<?>>();
+        for (var task : objects) {
+            futures.add(submit(() -> action.accept(task)));
+        }
+        for (var future : futures) {
+            try {
+                future.get();
+            } catch (Exception e) {
+                throw new RuntimeException(e);
+            }
+        }
+    }
 
     final class AssetDownloadOptions {
         private final Path assetRoot;

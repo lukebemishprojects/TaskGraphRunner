@@ -25,7 +25,7 @@ public class SplitClassesResourcesTask extends Task {
     private final TaskInput.ValueInput excludePattern;
 
     public SplitClassesResourcesTask(TaskModel.SplitClassesResources model, WorkItem workItem, Context context) {
-        super(model.name());
+        super(model.name(), model.type());
         this.input = TaskInput.file("input", model.input, workItem, context, PathSensitivity.NONE);
         if (model.excludePattern != null) {
             this.excludePattern = TaskInput.value("excludePattern", model.excludePattern, workItem, new Value.StringValue("META-INF/.*"));
@@ -46,8 +46,8 @@ public class SplitClassesResourcesTask extends Task {
 
     @Override
     protected void run(Context context) {
-        var classesJar = context.taskOutputPath(name(), "output");
-        var resourcesJar = context.taskOutputPath(name(), "resources");
+        var classesJar = context.taskOutputPath(this, "output");
+        var resourcesJar = context.taskOutputPath(this, "resources");
 
         var deny = Pattern.compile((String) excludePattern.value().value()).asMatchPredicate();
 

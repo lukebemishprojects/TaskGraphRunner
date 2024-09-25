@@ -27,6 +27,10 @@ public sealed abstract class TaskModel {
         return name;
     }
 
+    public final String type() {
+        return Adapter.TASK_TYPE_NAMES.get(getClass());
+    }
+
     static final class Adapter extends GsonAdapter<TaskModel> {
         private static final Map<String, TypeAdapter<? extends TaskModel>> TASK_TYPES;
         private static final Map<Class<? extends TaskModel>, String> TASK_TYPE_NAMES;

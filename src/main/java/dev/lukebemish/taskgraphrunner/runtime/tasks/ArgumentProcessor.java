@@ -186,7 +186,7 @@ public final class ArgumentProcessor {
 
             @Override
             public List<String> resolve(Path workingDirectory, String taskName, Context context, int argCount) {
-                return List.of(pattern.replace("{}", context.taskOutputPath(taskName, outputName).toAbsolutePath().toString()));
+                return List.of(pattern.replace("{}", context.taskOutputPath(context.getTask(taskName), outputName).toAbsolutePath().toString()));
             }
         }
 
