@@ -74,6 +74,7 @@ public class Main implements Runnable {
             .addSubcommand("neoform", new NeoForm(this))
             .addSubcommand("vanilla", new Vanilla(this))
             .addSubcommand("daemon", new Daemon(this))
+            .addSubcommand("mark", new Mark(this))
             .execute(args);
     }
 

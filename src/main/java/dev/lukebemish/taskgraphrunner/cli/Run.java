@@ -8,6 +8,7 @@ import dev.lukebemish.taskgraphrunner.runtime.Context;
 import dev.lukebemish.taskgraphrunner.runtime.Invocation;
 import dev.lukebemish.taskgraphrunner.runtime.Task;
 import dev.lukebemish.taskgraphrunner.runtime.util.JsonUtils;
+import org.jspecify.annotations.Nullable;
 import picocli.CommandLine;
 
 import java.io.IOException;
@@ -58,6 +59,13 @@ public class Run implements Runnable {
         description = "Specifies one or more Minecraft launcher installation directories to reuse assets from."
     )
     List<Path> launcherDirs = new ArrayList<>();
+
+    @CommandLine.Option(
+        names = "--task-record-json",
+        arity = "*",
+        description = "Specifies a file to record what tasks were executed and what their outputs were"
+    )
+    @Nullable Path taskRecordJson;
 
     private final Main main;
 
@@ -137,7 +145,7 @@ public class Run implements Runnable {
                             case WorkItem.Target.OutputTarget outputTarget -> outputTarget.output();
                         }, entry.getValue());
                     }
-                    invocation.execute(results);
+                    invocation.execute(results, taskRecordJson);
                 }
             }
         } catch (IOException e) {

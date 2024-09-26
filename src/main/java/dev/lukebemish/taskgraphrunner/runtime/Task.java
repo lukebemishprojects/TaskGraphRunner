@@ -92,6 +92,10 @@ public abstract class Task implements RecordedInput {
         }
     }
 
+    boolean isExecuted() {
+        return executed;
+    }
+
     private void execute(Context context) {
         executionLock.lock();
         try {

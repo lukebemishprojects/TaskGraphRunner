@@ -1,9 +1,16 @@
 package dev.lukebemish.taskgraphrunner.runtime;
 
+import com.google.gson.JsonArray;
+import com.google.gson.JsonObject;
 import dev.lukebemish.taskgraphrunner.model.Output;
+import dev.lukebemish.taskgraphrunner.runtime.util.JsonUtils;
 import dev.lukebemish.taskgraphrunner.runtime.util.LockManager;
+import org.jspecify.annotations.Nullable;
 
 import java.io.IOException;
+import java.io.UncheckedIOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -143,7 +150,7 @@ public class Invocation implements Context, AutoCloseable {
         return executor.submit(callable);
     }
 
-    public void execute(Map<Output, Path> results) {
+    public void execute(Map<Output, Path> results, @Nullable Path taskRecordJson) {
         Map<String, Map<String, Path>> tasks = new LinkedHashMap<>();
         for (var entry : results.entrySet()) {
             var taskName = entry.getKey().taskName();
@@ -155,6 +162,27 @@ public class Invocation implements Context, AutoCloseable {
                 var task = getTask(entry.getKey());
                 task.execute(this, entry.getValue());
             });
+        }
+        if (taskRecordJson != null) {
+            JsonObject executed = new JsonObject();
+            for (var task : this.tasks.values()) {
+                if (task.isExecuted()) {
+                    JsonObject singleTask = new JsonObject();
+                    singleTask.addProperty("type", task.type());
+                    JsonArray outputs = new JsonArray();
+                    singleTask.addProperty("state", taskStatePath(task).toAbsolutePath().toString());
+                    for (var output : task.outputTypes().entrySet()) {
+                        outputs.add(taskOutputPath(task, output.getKey()).toAbsolutePath().toString());
+                    }
+                    singleTask.add("outputs", outputs);
+                    executed.add(task.name(), singleTask);
+                }
+            }
+            try (var writer = Files.newBufferedWriter(taskRecordJson, StandardCharsets.UTF_8)) {
+                JsonUtils.GSON.toJson(executed, writer);
+            } catch (IOException e) {
+                throw new UncheckedIOException(e);
+            }
         }
     }
 
