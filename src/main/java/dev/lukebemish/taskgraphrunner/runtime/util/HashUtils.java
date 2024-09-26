@@ -7,6 +7,7 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.attribute.FileTime;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.HexFormat;
@@ -20,7 +21,9 @@ public final class HashUtils {
 
     private static final Queue<Path> cachedHashPaths = new ConcurrentLinkedDeque<>();
     private static final int pathsToCache = 256;
-    private static final Map<Path, byte[]> cachedHashes = new ConcurrentHashMap<>();
+    private static final Map<Path, CacheResult> cachedHashes = new ConcurrentHashMap<>();
+
+    private record CacheResult(byte[] result, FileTime lastModified) {}
 
     public static void hash(Path path, RecordedInput.ByteConsumer digest) {
         hash(path, digest, "MD5");
@@ -34,7 +37,16 @@ public final class HashUtils {
         }
         var existingHash = cachedHashes.get(path);
         if (existingHash != null) {
-            finalDigest.update(existingHash);
+            try {
+                if (Files.getLastModifiedTime(path).compareTo(existingHash.lastModified()) != 0) {
+                    cachedHashes.remove(path);
+                    hash(path, finalDigest, algorithm);
+                    return;
+                }
+            } catch (IOException e) {
+                throw new RuntimeException(e);
+            }
+            finalDigest.update(existingHash.result());
             return;
         }
 
@@ -46,7 +58,8 @@ public final class HashUtils {
                 digest.update(buffer, 0, read);
             }
             var hash = digest.digest();
-            cachedHashes.put(path, hash);
+            var lastModified = Files.getLastModifiedTime(path);
+            cachedHashes.put(path, new CacheResult(hash, lastModified));
             finalDigest.update(hash);
         } catch (IOException | NoSuchAlgorithmException e) {
             throw new RuntimeException(e);

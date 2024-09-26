@@ -11,12 +11,22 @@ import java.util.ArrayList;
 import java.util.List;
 
 @CommandLine.Command(name = "taskgraphrunner", mixinStandardHelpOptions = true)
-public class Main {
+public class Main implements Runnable {
     @CommandLine.Option(names = "--cache-dir", description = "Where caches should be stored.")
     Path cacheDir = defaultCacheDirectory();
 
     @CommandLine.ArgGroup(exclusive = false, multiplicity = "*", heading = "Artifact manifests%n")
     List<ArtifactManifestOption> artifactManifests = new ArrayList<>();
+
+    public Main(String[] args) {
+        this.args = args;
+    }
+
+    @Override
+    public void run() {
+        System.err.println("No subcommand specified.");
+        new CommandLine(this).usage(System.err);
+    }
 
     static class ArtifactManifestOption {
         @CommandLine.Option(names = "--artifact-manifest", description = "Artifact manifest files.", required = true)
@@ -32,7 +42,7 @@ public class Main {
         Path targetDirectory;
     }
 
-    protected ArtifactManifest makeManifest() {
+    ArtifactManifest makeManifest() {
         var manifests = new ArrayList<ArtifactManifest>();
         ArtifactManifest manifest = ArtifactManifest.delegating(manifests);
         for (var m : artifactManifests) {
@@ -45,14 +55,26 @@ public class Main {
         return manifest;
     }
 
+    final String[] args;
+
     public static void main(String[] args) {
-        var main = new Main();
-        System.exit(new CommandLine(main)
-            .addSubcommand("run", new Run(main))
-            .addSubcommand("clean", new Clean(main))
-            .addSubcommand("neoform", new NeoForm(main))
-            .addSubcommand("vanilla", new Vanilla(main))
-            .execute(args));
+        try {
+            var main = new Main(args);
+            System.exit(main.execute(args));
+        } catch (Throwable t) {
+            logException(t);
+            System.exit(1);
+        }
+    }
+
+    int execute(String[] args) {
+        return new CommandLine(this)
+            .addSubcommand("run", new Run(this))
+            .addSubcommand("clean", new Clean(this))
+            .addSubcommand("neoform", new NeoForm(this))
+            .addSubcommand("vanilla", new Vanilla(this))
+            .addSubcommand("daemon", new Daemon(this))
+            .execute(args);
     }
 
     private static Path defaultCacheDirectory() {
@@ -67,5 +89,24 @@ public class Main {
             }
         }
         return userHomeDir.resolve(".taskgraphrunner");
+    }
+
+    // Primarily for the daemon, but may be useful otherwise too
+    private static final boolean STACKTRACE = !Boolean.getBoolean("dev.lukebemish.taskgraphrunner.hidestacktrace");
+
+    static void execute(Runnable runnable) {
+        try {
+            runnable.run();
+        } catch (Throwable t) {
+            logException(t);
+        }
+    }
+
+    static void logException(Throwable t) {
+        if (STACKTRACE) {
+            t.printStackTrace(System.err);
+        } else {
+            System.err.println(t);
+        }
     }
 }

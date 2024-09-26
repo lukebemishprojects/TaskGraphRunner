@@ -14,11 +14,9 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.Callable;
-import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
-import java.util.concurrent.atomic.AtomicInteger;
 
 public class Invocation implements Context, AutoCloseable {
     private final Path cacheDirectory;
@@ -30,7 +28,6 @@ public class Invocation implements Context, AutoCloseable {
     private final ArtifactManifest artifactManifest = ArtifactManifest.delegating(artifactManifests);
     private final boolean useCached;
     private final AssetDownloadOptions assetOptions;
-    private final AtomicInteger threadCounter = new AtomicInteger(1);
     private final ExecutorService executor = Executors.newThreadPerTaskExecutor(Thread.ofVirtual().name("TaskGraphRunner-", 1).factory());
 
     public Invocation(Path cacheDirectory, AssetDownloadOptions assetDownloadOptions, boolean useCached) throws IOException {
@@ -139,28 +136,11 @@ public class Invocation implements Context, AutoCloseable {
     }
 
     public Future<?> submit(Runnable runnable) {
-        var future = new CompletableFuture<>();
-        Thread.ofVirtual().name("TaskGraphRunner-"+threadCounter.getAndIncrement()).start(() -> {
-            try {
-                runnable.run();
-                future.complete(null);
-            } catch (Exception e) {
-                future.completeExceptionally(e);
-            }
-        });
-        return future;
+        return executor.submit(runnable);
     }
 
     public <T> Future<T> submit(Callable<T> callable) {
-        var future = new CompletableFuture<T>();
-        Thread.ofVirtual().name("TaskGraphRunner-"+threadCounter.getAndIncrement()).start(() -> {
-            try {
-                future.complete(callable.call());
-            } catch (Exception e) {
-                future.completeExceptionally(e);
-            }
-        });
-        return future;
+        return executor.submit(callable);
     }
 
     public void execute(Map<Output, Path> results) {
