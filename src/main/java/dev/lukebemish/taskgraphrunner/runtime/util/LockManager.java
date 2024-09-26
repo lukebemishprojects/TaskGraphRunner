@@ -16,13 +16,47 @@ import java.nio.file.attribute.BasicFileAttributes;
 import java.nio.file.attribute.FileTime;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.locks.ReentrantLock;
 
 public class LockManager {
     private static final Logger LOGGER = LoggerFactory.getLogger(LockManager.class);
+    private static final String ROOT_LOCK = "root";
 
     private final Path lockDirectory;
+
+    private final Map<String, Lock> scopedLocks = new HashMap<>();
+    private final Map<String, Integer> scopedLockCounts = new HashMap<>();
+    private ReentrantLock scopedLock = new ReentrantLock();
+
+    private void closeScopedLock(String key) {
+        scopedLock.lock();
+        try {
+            var count = scopedLockCounts.compute(key, (k, v) -> v == null ? null : v - 1);
+            if (count == null || count <= 0) {
+                var lock = scopedLocks.remove(key);
+                if (lock != null) {
+                    lock.close();
+                }
+            }
+        } finally {
+            scopedLock.unlock();
+        }
+    }
+
+    public LockLike managerScopedLock(String cacheKey) {
+        scopedLock.lock();
+        try {
+            scopedLockCounts.compute(cacheKey, (key, count) -> count == null ? 1 : count + 1);
+            scopedLocks.computeIfAbsent(cacheKey, this::lock);
+        } finally {
+            scopedLock.unlock();
+        }
+        return new ManagedLock(cacheKey);
+    }
 
     public LockManager(Path lockDirectory) throws IOException {
         Files.createDirectories(lockDirectory);
@@ -34,8 +68,10 @@ public class LockManager {
     }
 
     public Locks locks(List<String> keys) {
-        var locks = keys.stream().map(this::lock).toList();
-        return new Locks(locks);
+        try (var ignored = lock(ROOT_LOCK)) {
+            var locks = keys.stream().map(this::lock).toList();
+            return new Locks(locks);
+        }
     }
 
     public Lock lockSingleFile(Path path) {
@@ -43,8 +79,16 @@ public class LockManager {
     }
 
     public Locks lockSingleFiles(List<Path> paths) {
-        var locks = paths.stream().map(this::lockSingleFile).toList();
-        return new Locks(locks);
+        try (var ignored = lock(ROOT_LOCK)) {
+            var locks = paths.stream().map(this::lockSingleFile).toList();
+            return new Locks(locks);
+        }
+    }
+
+    public void acquisition(Runnable runnable) {
+        try (var ignored = lock(ROOT_LOCK)) {
+            runnable.run();
+        }
     }
 
     public Lock lock(String key) {
@@ -142,10 +186,28 @@ public class LockManager {
         }
     }
 
-    public static final class Locks implements AutoCloseable {
-        private final List<Lock> locks;
+    public sealed interface LockLike extends AutoCloseable {
+        @Override
+        void close();
+    }
 
-        private Locks(List<Lock> locks) {
+    public final class ManagedLock implements LockLike {
+        private final String key;
+
+        private ManagedLock(String key) {
+            this.key = key;
+        }
+
+        @Override
+        public void close() {
+            closeScopedLock(key);
+        }
+    }
+
+    public static final class Locks implements LockLike {
+        private final List<? extends LockLike> locks;
+
+        private Locks(List<? extends LockLike> locks) {
             this.locks = locks;
         }
 
@@ -157,7 +219,7 @@ public class LockManager {
         }
     }
 
-    public static final class Lock implements AutoCloseable {
+    public static final class Lock implements LockLike {
         private final FileLock fileLock;
 
         private Lock(FileLock fileLock) {

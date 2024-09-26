@@ -6,6 +6,8 @@ import dev.lukebemish.taskgraphrunner.model.Output;
 import dev.lukebemish.taskgraphrunner.runtime.util.JsonUtils;
 import dev.lukebemish.taskgraphrunner.runtime.util.LockManager;
 import org.jspecify.annotations.Nullable;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
@@ -26,6 +28,8 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 
 public class Invocation implements Context, AutoCloseable {
+    private static final Logger LOGGER = LoggerFactory.getLogger(Invocation.class);
+
     private final Path cacheDirectory;
 
     private final LockManager lockManager;
@@ -157,11 +161,19 @@ public class Invocation implements Context, AutoCloseable {
             var map = tasks.computeIfAbsent(taskName, k -> new LinkedHashMap<>());
             map.put(entry.getKey().name(), entry.getValue());
         }
-        try (var ignored = locks(tasks.keySet())) {
+        try {
             execute(tasks.entrySet(), entry -> {
                 var task = getTask(entry.getKey());
                 task.execute(this, entry.getValue());
             });
+        } finally {
+            for (var task : this.tasks.values()) {
+                try {
+                    task.clean();
+                } catch (Throwable t) {
+                    LOGGER.error("Failed to clean up task `{}`", task.name(), t);
+                }
+            }
         }
         if (taskRecordJson != null) {
             JsonObject executed = new JsonObject();

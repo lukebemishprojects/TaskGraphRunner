@@ -44,22 +44,6 @@ public interface Context {
         }
     }
 
-    default LockManager.Locks locks(Set<String> tasks) {
-        Set<String> allTasks = new HashSet<>();
-        for (String task : tasks) {
-            collectDependencies(allTasks, getTask(task), Set.of());
-        }
-        return locks0(tasks);
-    }
-
-    private LockManager.Locks locks0(Set<String> tasks) {
-        List<String> keys = new ArrayList<>();
-        for (String task : tasks) {
-            keys.add(taskDirectory(getTask(task)).getFileName().toString());
-        }
-        return lockManager().locks(keys);
-    }
-
     boolean useCached();
 
     AssetDownloadOptions assetOptions();
