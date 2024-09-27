@@ -47,7 +47,11 @@ import java.util.List;
 import java.util.Map;
 import java.util.Queue;
 import java.util.Set;
+import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.Future;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.Consumer;
 
 public abstract class Task implements RecordedInput {
     private static final Logger LOGGER = LoggerFactory.getLogger(Task.class);
@@ -72,10 +76,12 @@ public abstract class Task implements RecordedInput {
     private volatile byte[] referenceHash;
     private volatile byte[] contentsHash;
 
-    private boolean executed;
+    private final AtomicBoolean executed = new AtomicBoolean(false);
+    private final AtomicBoolean submitted = new AtomicBoolean(false);
 
     private LockManager.LockLike lock;
     private final AtomicInteger lockedDependents = new AtomicInteger(0);
+    private final AtomicInteger remainingDependencies = new AtomicInteger(0);
 
     protected int cacheVersion() {
         return 1;
@@ -130,26 +136,7 @@ public abstract class Task implements RecordedInput {
         return () -> unlockDependencies(context);
     }
 
-    private record GraphNode(Task task, List<GraphNode> dependents, Map<String, GraphNode> dependentMap, Map<String, Path> outputs) {
-        boolean executed() {
-            return task.isExecuted();
-        }
-
-        boolean ready(Context context) {
-            for (var i : task.inputs()) {
-                for (var dep : i.dependencies()) {
-                    if (!context.getTask(dep).isExecuted()) {
-                        return false;
-                    }
-                }
-            }
-            return true;
-        }
-
-        List<GraphNode> next(Context context) {
-            return dependents.stream().filter(node -> node.ready(context)).toList();
-        }
-    }
+    private record GraphNode(Task task, List<GraphNode> dependents, Map<String, GraphNode> dependentMap, Map<String, Path> outputs) {}
 
     private record Action(String task, Map<String, Path> outputs) {}
 
@@ -172,8 +159,10 @@ public abstract class Task implements RecordedInput {
                 }
                 return node;
             });
+            int deps = 0;
             for (var input : task.inputs()) {
                 for (var dependency : input.dependencies()) {
+                    deps++;
                     nodes.compute(dependency, (name, node) -> {
                         if (node == null) {
                             var list = new ArrayList<GraphNode>();
@@ -192,48 +181,69 @@ public abstract class Task implements RecordedInput {
                     queue.add(new Action(dependency, new HashMap<>()));
                 }
             }
+            task.remainingDependencies.set(deps);
         }
         return nodes.values();
     }
 
+    private static void executeNode(Context context, Consumer<Future<?>> futureConsumer, GraphNode node) {
+        futureConsumer.accept(context.submit(() -> {
+            LOGGER.debug("Executing task {} which is a dependency of {}", node.task.name(), node.dependentMap.keySet());
+            node.task.lockedDependents.set(1+node.dependents.size());
+            node.task.lock0(context);
+            try {
+                node.task.execute(context);
+                for (var entry : node.outputs.entrySet()) {
+                    var outputPath = context.taskOutputPath(node.task, entry.getKey());
+                    try {
+                        Files.copy(outputPath, entry.getValue(), StandardCopyOption.REPLACE_EXISTING);
+                    } catch (IOException e) {
+                        throw new UncheckedIOException(e);
+                    }
+                }
+            } finally {
+                node.task.lockedDependents.getAndDecrement();
+                node.task.unlock0();
+            }
+            for (var dependent : node.dependents) {
+                var remaining = dependent.task.remainingDependencies.decrementAndGet();
+                if (remaining <= 0) {
+                    if (!dependent.task.submitted.getAndSet(true)) {
+                        executeNode(context, futureConsumer, dependent);
+                    }
+                }
+            }
+        }));
+    }
+
     static void executeTasks(Context context, Map<String, Map<String, Path>> actions) {
         var originalNodes = assemble(context, actions);
-        Map<String, GraphNode> nodes = new HashMap<>();
+        var futures = new ConcurrentLinkedQueue<Future<?>>();
         for (var node : originalNodes) {
-            if (node.ready(context)) {
-                nodes.put(node.task.name(), node);
+            if (node.task.remainingDependencies.get() <= 0) {
+                executeNode(context, futures::add, node);
             }
         }
-        while (!nodes.isEmpty()) {
-            context.execute(nodes.values(), node -> {
-                LOGGER.debug("Executing task {} which is a dependency of {}", node.task.name(), node.dependentMap.keySet());
-                node.task.lockedDependents.set(1+node.dependents.size());
-                node.task.lock0(context);
-                try {
-                    node.task.execute(context);
-                    for (var entry : node.outputs.entrySet()) {
-                        var outputPath = context.taskOutputPath(node.task, entry.getKey());
-                        try {
-                            Files.copy(outputPath, entry.getValue(), StandardCopyOption.REPLACE_EXISTING);
-                        } catch (IOException e) {
-                            throw new UncheckedIOException(e);
-                        }
-                    }
-                } finally {
-                    node.task.lockedDependents.getAndDecrement();
-                    node.task.unlock0();
-                }
-            });
-            Map<String, GraphNode> newNodes = new HashMap<>();
-            for (var node : nodes.values()) {
-                for (var next : node.next(context)) {
-                    newNodes.put(next.task.name(), next);
+        List<Throwable> suppressed = new ArrayList<>();
+        while (!futures.isEmpty()) {
+            var future = futures.poll();
+            try {
+                future.get();
+            } catch (Throwable t) {
+                suppressed.add(t);
+            }
+        }
+        if (!suppressed.isEmpty()) {
+            var e = new RuntimeException("Failed to execute task", suppressed.getFirst());
+            if (suppressed.size() > 1) {
+                for (var t : suppressed.subList(1, suppressed.size())) {
+                    e.addSuppressed(t);
                 }
             }
-            nodes = newNodes;
+            throw e;
         }
         for (var node : originalNodes) {
-            if (!node.executed()) {
+            if (!node.task.executed.get()) {
                 throw new IllegalStateException("Task `" + node.task.name() + "` was not executed, likely due to a circular dependency");
             }
         }
@@ -245,13 +255,13 @@ public abstract class Task implements RecordedInput {
     }
 
     boolean isExecuted() {
-        return executed;
+        return executed.get();
     }
 
     private void execute(Context context) {
         LOGGER.debug("Requested task {}", name());
         try {
-            if (executed) {
+            if (executed.get()) {
                 return;
             }
             try (var ignored = unlockOnCompletion(context)) {
@@ -306,7 +316,7 @@ public abstract class Task implements RecordedInput {
                             JsonElement newInputState = recordedValue(context);
                             if (newInputState.equals(existingInputState)) {
                                 updateState(existingState, context);
-                                executed = true;
+                                executed.set(true);
                                 LOGGER.info("Task `" + name + "` is up-to-date.");
                                 return;
                             }
@@ -321,7 +331,7 @@ public abstract class Task implements RecordedInput {
                 run(context);
                 saveState(context);
                 LOGGER.info("Finished task `" + name + "`.");
-                executed = true;
+                executed.set(true);
             }
         } catch (Exception e) {
             throw new RuntimeException("Exception in task "+name(),e);
@@ -404,7 +414,7 @@ public abstract class Task implements RecordedInput {
                     sortedInputs.sort(Comparator.comparing(TaskInput::name));
                     for (TaskInput input : sortedInputs) {
                         for (var dependency : input.dependencies()) {
-                            if (!context.getTask(dependency).executed) {
+                            if (!context.getTask(dependency).executed.get()) {
                                 throw new IllegalStateException("Dependency `"+dependency+"` of task `"+name()+"` has not been executed but was requested");
                             }
                         }
