@@ -24,7 +24,7 @@ public class InjectSourcesTask extends Task {
     private final List<TaskInput.HasFileInput> inputs;
 
     public InjectSourcesTask(TaskModel.InjectSources model, WorkItem workItem, Context context) {
-        super(model.name(), model.type());
+        super(model);
         this.inputs = new ArrayList<>();
         int count = 0;
         for (var input : model.inputs) {

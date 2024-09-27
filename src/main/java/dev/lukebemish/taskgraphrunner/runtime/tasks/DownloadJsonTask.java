@@ -22,7 +22,7 @@ public class DownloadJsonTask extends Task {
     private final TaskInput.ValueInput version;
 
     public DownloadJsonTask(TaskModel.DownloadJson model, WorkItem workItem, Context context) {
-        super(model.name(), model.type());
+        super(model);
         this.manifest = TaskInput.file("manifest", model.manifest, workItem, context, PathSensitivity.NONE);
         this.version = TaskInput.value("version", model.version, workItem);
     }

@@ -247,7 +247,7 @@ public final class SingleVersionGenerator {
         for (Output stubs : additionalClasspath) {
             decompileClasspath.add(new Input.ListInput(List.of(new Input.TaskInput(stubs))));
         }
-        config.tasks.add(new TaskModel.Tool(
+        var decompileTask = new TaskModel.Tool(
             "decompile",
             List.of(
                 Argument.direct("-Xmx4G"),
@@ -270,7 +270,9 @@ public final class SingleVersionGenerator {
                 new Argument.FileInput(null, new Input.TaskInput(binariesTask), PathSensitivity.NONE),
                 new Argument.FileOutput(null, "output", "jar")
             )
-        ));
+        );
+        decompileTask.parallelism = "decompile";
+        config.tasks.add(decompileTask);
 
         Output sourcesTask = new Output("decompile", "output");
 

@@ -17,7 +17,7 @@ public class PatchSourcesTask extends JavaTask {
     private final TaskInput.HasFileInput patches;
 
     public PatchSourcesTask(TaskModel.PatchSources model, WorkItem workItem, Context context) {
-        super(model.name(), model.type());
+        super(model);
         this.input = TaskInput.file("input", model.input, workItem, context, PathSensitivity.NONE);
         this.patches = TaskInput.file("patches", model.patches, workItem, context, PathSensitivity.NONE);
     }

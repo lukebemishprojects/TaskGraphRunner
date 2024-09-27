@@ -40,7 +40,7 @@ public class CompileTask extends Task {
     private final TaskInput.FileListInput sourcepath;
 
     public CompileTask(TaskModel.Compile model, WorkItem workItem, Context context) {
-        super(model.name(), model.type());
+        super(model);
 
         this.outputExtensions = new HashMap<>();
         outputExtensions.put("output", "jar");

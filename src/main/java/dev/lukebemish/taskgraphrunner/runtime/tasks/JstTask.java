@@ -32,7 +32,7 @@ public class JstTask extends JavaTask {
     private final Map<String, String> outputExtensions;
 
     public JstTask(TaskModel.Jst model, WorkItem workItem, Context context) {
-        super(model.name(), model.type());
+        super(model);
 
         this.inputs = new ArrayList<>();
 

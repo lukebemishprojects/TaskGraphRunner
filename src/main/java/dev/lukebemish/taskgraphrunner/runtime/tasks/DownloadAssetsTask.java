@@ -25,7 +25,7 @@ public class DownloadAssetsTask extends Task {
     private final TaskInput.HasFileInput versionJson;
 
     public DownloadAssetsTask(TaskModel.DownloadAssets model, WorkItem workItem, Context context) {
-        super(model.name(), model.type());
+        super(model);
         this.versionJson = TaskInput.file("versionJson", model.versionJson, workItem, context, PathSensitivity.NONE);
     }
 

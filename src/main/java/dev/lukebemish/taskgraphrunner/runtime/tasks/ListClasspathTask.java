@@ -24,7 +24,7 @@ public class ListClasspathTask extends Task {
     private final TaskInput.ValueInput additionalLibraries;
 
     public ListClasspathTask(TaskModel.ListClasspath model, WorkItem workItem, Context context) {
-        super(model.name(), model.type());
+        super(model);
         this.versionJson = TaskInput.file("versionJson", model.versionJson, workItem, context, PathSensitivity.NONE);
         if (model.additionalLibraries == null) {
             this.additionalLibraries = new TaskInput.ValueInput("additionalLibraries", new Value.ListValue(List.of()));

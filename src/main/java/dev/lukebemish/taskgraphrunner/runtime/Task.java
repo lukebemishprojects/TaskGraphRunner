@@ -24,6 +24,7 @@ import dev.lukebemish.taskgraphrunner.runtime.tasks.ToolTask;
 import dev.lukebemish.taskgraphrunner.runtime.tasks.TransformMappingsTask;
 import dev.lukebemish.taskgraphrunner.runtime.util.HashUtils;
 import dev.lukebemish.taskgraphrunner.runtime.util.LockManager;
+import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -59,10 +60,12 @@ public abstract class Task implements RecordedInput {
 
     private final String name;
     private final String type;
+    private final @Nullable String parallelism;
 
-    public Task(String name, String type) {
-        this.name = name;
-        this.type = type;
+    public Task(TaskModel model) {
+        this.name = model.name();
+        this.type = model.type();
+        this.parallelism = model.parallelism;
     }
 
     public String name() {
@@ -328,7 +331,11 @@ public abstract class Task implements RecordedInput {
                 }
                 // Something was not up-to-date -- so we run everything
                 LOGGER.info("Starting task `" + name + "`.");
-                run(context);
+                if (parallelism == null) {
+                    run(context);
+                } else {
+                    context.lockManager().enforcedParallelism(context, parallelism, () -> run(context));
+                }
                 saveState(context);
                 LOGGER.info("Finished task `" + name + "`.");
                 executed.set(true);

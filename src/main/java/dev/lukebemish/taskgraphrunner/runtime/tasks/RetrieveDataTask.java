@@ -25,7 +25,7 @@ public class RetrieveDataTask extends Task {
     private final boolean isMakingZip;
 
     public RetrieveDataTask(TaskModel.RetrieveData model, WorkItem workItem, Context context) {
-        super(model.name(), model.type());
+        super(model);
         this.input = TaskInput.file("input", model.input, workItem, context, PathSensitivity.NONE);
         this.path = TaskInput.value("path", model.path, workItem);
         var pathToFind = path.value();

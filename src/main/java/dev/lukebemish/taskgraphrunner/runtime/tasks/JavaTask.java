@@ -1,5 +1,6 @@
 package dev.lukebemish.taskgraphrunner.runtime.tasks;
 
+import dev.lukebemish.taskgraphrunner.model.TaskModel;
 import dev.lukebemish.taskgraphrunner.runtime.Context;
 import dev.lukebemish.taskgraphrunner.runtime.Task;
 import dev.lukebemish.taskgraphrunner.runtime.util.FileUtils;
@@ -13,8 +14,8 @@ import java.util.ArrayList;
 import java.util.List;
 
 public abstract class JavaTask extends Task {
-    public JavaTask(String name, String type) {
-        super(name, type);
+    public JavaTask(TaskModel model) {
+        super(model);
     }
 
     @Override

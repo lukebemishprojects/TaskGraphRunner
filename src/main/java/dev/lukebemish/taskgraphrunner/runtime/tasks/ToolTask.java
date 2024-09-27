@@ -17,7 +17,7 @@ public class ToolTask extends JavaTask {
     private final Map<String, String> outputExtensions;
 
     public ToolTask(TaskModel.Tool model, WorkItem workItem, Context context) {
-        super(model.name(), model.type());
+        super(model);
 
         this.outputExtensions = new HashMap<>();
 

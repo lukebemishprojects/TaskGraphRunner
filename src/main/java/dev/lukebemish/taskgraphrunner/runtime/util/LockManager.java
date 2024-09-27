@@ -1,5 +1,6 @@
 package dev.lukebemish.taskgraphrunner.runtime.util;
 
+import dev.lukebemish.taskgraphrunner.runtime.Context;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -16,11 +17,16 @@ import java.nio.file.attribute.BasicFileAttributes;
 import java.nio.file.attribute.FileTime;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Semaphore;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.locks.ReentrantLock;
+import java.util.stream.IntStream;
 
 public class LockManager {
     private static final Logger LOGGER = LoggerFactory.getLogger(LockManager.class);
@@ -30,7 +36,34 @@ public class LockManager {
 
     private final Map<String, Lock> scopedLocks = new HashMap<>();
     private final Map<String, Integer> scopedLockCounts = new HashMap<>();
-    private ReentrantLock scopedLock = new ReentrantLock();
+    private final ReentrantLock scopedLock = new ReentrantLock();
+
+    private static final Map<String, Semaphore> parallelLocks = new ConcurrentHashMap<>();
+
+    private static int findParallelism(String key) {
+        int result = Integer.getInteger("dev.lukebemish.taskgraphrunner.parallelism." + key, 1);
+        if (result < 1) {
+            throw new IllegalArgumentException("Property dev.lukebemish.taskgraphrunner.parallelism."+key+" must be positive");
+        }
+        return result;
+    }
+
+    public void enforcedParallelism(Context context, String key, Runnable action) {
+        var parallelism = findParallelism(key);
+        var semaphore = parallelLocks.computeIfAbsent(key, k -> new Semaphore(parallelism));
+        try {
+            semaphore.acquire();
+            try {
+                try (var ignored = lockWithCount(context, "parallelism." + key, parallelism)) {
+                    action.run();
+                }
+            } finally {
+                semaphore.release();
+            }
+        } catch (InterruptedException e) {
+            throw new RuntimeException(e);
+        }
+    }
 
     private void closeScopedLock(String key) {
         scopedLock.lock();
@@ -64,7 +97,7 @@ public class LockManager {
     }
 
     private Path getLockFile(String key) {
-        return lockDirectory.resolve(HashUtils.hash(key) + ".lock");
+        return lockDirectory.resolve(key + ".lock");
     }
 
     public Locks locks(List<String> keys) {
@@ -89,6 +122,67 @@ public class LockManager {
         try (var ignored = lock(ROOT_LOCK)) {
             runnable.run();
         }
+    }
+
+    private sealed interface ThreadState {
+        record WithThread(Thread thread) implements ThreadState {}
+        enum NoThread implements ThreadState {
+            STOPPED
+        }
+    }
+
+    public Lock lockWithCount(Context context, String key, int count) {
+        if (count < 1) {
+            throw new IllegalArgumentException("Cannot lock with less than one option!");
+        }
+        AtomicReference<Lock> lock = new AtomicReference<>();
+        List<Exception> exceptions = new ArrayList<>();
+        @SuppressWarnings("unchecked") AtomicReference<ThreadState>[] states = new AtomicReference[count];
+        for (int i = 0; i < count; i++) {
+            states[i] = new AtomicReference<>(null);
+        }
+        context.execute(IntStream.range(0, count).boxed().toList(), i -> {
+            try {
+                boolean[] stopped = new boolean[1];
+                states[i].updateAndGet(state -> {
+                    if (state == ThreadState.NoThread.STOPPED) {
+                        stopped[0] = true;
+                        return state;
+                    }
+                    return new ThreadState.WithThread(Thread.currentThread());
+                });
+                if (stopped[0]) {
+                    return;
+                }
+                var found = lock(key + "." + i);
+                lock.updateAndGet(existing -> {
+                    if (existing != null) {
+                        existing.close();
+                    }
+                    for (int j = 0; j < count; j++) {
+                        states[j].updateAndGet(state -> {
+                            if (state instanceof ThreadState.WithThread withThread) {
+                                withThread.thread().interrupt();
+                            }
+                            return ThreadState.NoThread.STOPPED;
+                        });
+                    }
+                    return found;
+                });
+            } catch (RuntimeException e) {
+                synchronized (exceptions) {
+                    exceptions.add(e);
+                }
+            }
+        });
+        if (!exceptions.isEmpty()) {
+            var e = new RuntimeException("Failed to acquire lock", exceptions.getFirst());
+            for (int i = 1; i < exceptions.size(); i++) {
+                e.addSuppressed(exceptions.get(i));
+            }
+            throw e;
+        }
+        return lock.get();
     }
 
     public Lock lock(String key) {

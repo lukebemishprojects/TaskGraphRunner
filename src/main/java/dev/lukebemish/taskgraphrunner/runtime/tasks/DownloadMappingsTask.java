@@ -23,7 +23,7 @@ public class DownloadMappingsTask extends Task {
     private final TaskInput.HasFileInput versionJson;
 
     public DownloadMappingsTask(TaskModel.DownloadMappings model, WorkItem workItem, Context context) {
-        super(model.name(), model.type());
+        super(model);
         this.distribution = TaskInput.value("distribution", model.distribution, workItem);
         this.versionJson = TaskInput.file("versionJson", model.versionJson, workItem, context, PathSensitivity.NONE);
     }

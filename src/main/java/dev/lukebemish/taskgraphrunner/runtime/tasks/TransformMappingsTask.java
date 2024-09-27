@@ -26,7 +26,7 @@ public class TransformMappingsTask extends Task {
     private final TaskInput.ValueInput formatValue;
 
     public TransformMappingsTask(TaskModel.TransformMappings model, WorkItem workItem, Context context) {
-        super(model.name(), model.type());
+        super(model);
         this.format = getFormat(model.format);
         this.formatValue = new TaskInput.ValueInput("format", new Value.StringValue(format.name()));
         this.source = MappingsSourceImpl.of(model.source, workItem, context, new AtomicInteger());

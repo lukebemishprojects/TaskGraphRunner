@@ -25,7 +25,7 @@ public class SplitClassesResourcesTask extends Task {
     private final TaskInput.ValueInput excludePattern;
 
     public SplitClassesResourcesTask(TaskModel.SplitClassesResources model, WorkItem workItem, Context context) {
-        super(model.name(), model.type());
+        super(model);
         this.input = TaskInput.file("input", model.input, workItem, context, PathSensitivity.NONE);
         if (model.excludePattern != null) {
             this.excludePattern = TaskInput.value("excludePattern", model.excludePattern, workItem, new Value.StringValue("META-INF/.*"));

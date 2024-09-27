@@ -231,6 +231,7 @@ public final class NeoFormGenerator {
                     }
 
                     if (isVineflower(function)) {
+                        tool.parallelism = "decompile";
                         Output byName = null;
                         Output otherwise = null;
                         for (var arg : tool.args) {

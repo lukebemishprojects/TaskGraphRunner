@@ -37,7 +37,7 @@ public class InterfaceInjectionTask extends Task {
     private final TaskInput.FileListInput classpath;
 
     public InterfaceInjectionTask(TaskModel.InterfaceInjection model, WorkItem workItem, Context context) {
-        super(model.name(), model.type());
+        super(model);
         this.input = TaskInput.file("input", model.input, workItem, context, PathSensitivity.NONE);
         this.interfaceInjection = TaskInput.files("interfaceInjection", model.interfaceInjection, workItem, context, PathSensitivity.NONE);
 
@@ -272,7 +272,7 @@ public class InterfaceInjectionTask extends Task {
 
     private record Signature(String signature, int parameters) {}
 
-    public static Signature parseSignature(String binaryName, String signature, NonLoadingClassLoader classFinder) {
+    private static Signature parseSignature(String binaryName, String signature, NonLoadingClassLoader classFinder) {
         var tokens = new ArrayDeque<>(lex(signature));
         StringBuilder binarySignature = new StringBuilder("L").append(binaryName);
 

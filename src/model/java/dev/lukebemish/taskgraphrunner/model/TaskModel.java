@@ -18,6 +18,7 @@ import java.util.function.Function;
 @JsonAdapter(TaskModel.Adapter.class)
 public sealed abstract class TaskModel {
     protected final String name;
+    public @Nullable String parallelism;
 
     protected TaskModel(String name) {
         this.name = name;
@@ -115,9 +116,14 @@ public sealed abstract class TaskModel {
             @Override
             public Function<Values, TransformMappings> build(Builder<TransformMappings> builder) {
                 var name = builder.field("name", task -> task.name, String.class);
+                var parallelism = builder.field("parallelism", task -> task.parallelism, String.class);
                 var format = builder.field("format", task -> task.format, MappingsFormat.class);
                 var source = builder.field("source", task -> task.source, MappingsSource.class);
-                return values -> new TransformMappings(values.get(name), values.get(format), values.get(source));
+                return values -> {
+                    var task = new TransformMappings(values.get(name), values.get(format), values.get(source));
+                    task.parallelism = values.get(parallelism);
+                    return task;
+                };
             }
         }
     }
@@ -139,10 +145,15 @@ public sealed abstract class TaskModel {
             @Override
             public Function<Values, InterfaceInjection> build(Builder<InterfaceInjection> builder) {
                 var name = builder.field("name", task -> task.name, String.class);
+                var parallelism = builder.field("parallelism", task -> task.parallelism, String.class);
                 var input = builder.field("input", task -> task.input, Input.class);
                 var interfaceInjection = builder.field("interfaceInjection", task -> task.interfaceInjection, Input.class);
                 var classpath = builder.field("classpath", task -> task.classpath, TypeToken.getParameterized(List.class, Input.class).getType());
-                return values -> new InterfaceInjection(values.get(name), values.get(input), values.get(interfaceInjection), values.get(classpath));
+                return values -> {
+                    var task = new InterfaceInjection(values.get(name), values.get(input), values.get(interfaceInjection), values.get(classpath));
+                    task.parallelism = values.get(parallelism);
+                    return task;
+                };
             }
         }
     }
@@ -173,6 +184,7 @@ public sealed abstract class TaskModel {
             @Override
             public Function<Values, Jst> build(Builder<Jst> builder) {
                 var name = builder.field("name", task -> task.name, String.class);
+                var parallelism = builder.field("parallelism", task -> task.parallelism, String.class);
                 var args = builder.field("args", task -> task.args, TypeToken.getParameterized(List.class, Argument.class).getType());
                 var jvmArgs = builder.field("jvmArgs", task -> task.jvmArgs, TypeToken.getParameterized(List.class, Argument.class).getType());
                 var input = builder.field("input", task -> task.input, Input.class);
@@ -186,6 +198,7 @@ public sealed abstract class TaskModel {
                     jst.accessTransformers = values.get(accessTransformers);
                     jst.interfaceInjection = values.get(interfaceInjection);
                     jst.parchmentData = values.get(parchmentData);
+                    jst.parallelism = values.get(parallelism);
                     return jst;
                 };
             }
@@ -211,11 +224,16 @@ public sealed abstract class TaskModel {
             @Override
             public Function<Values, Compile> build(Builder<Compile> builder) {
                 var name = builder.field("name", task -> task.name, String.class);
+                var parallelism = builder.field("parallelism", task -> task.parallelism, String.class);
                 var arguments = builder.field("args", task -> task.args, TypeToken.getParameterized(List.class, Argument.class).getType());
                 var sources = builder.field("sources", task -> task.sources, Input.class);
                 var sourcepath = builder.field("sourcepath", task -> task.sourcepath, TypeToken.getParameterized(List.class, Input.class).getType());
                 var classpath = builder.field("classpath", task -> task.classpath, TypeToken.getParameterized(List.class, Input.class).getType());
-                return values -> new Compile(values.get(name), values.get(arguments), values.get(sources), values.get(sourcepath), values.get(classpath));
+                return values -> {
+                    var task = new Compile(values.get(name), values.get(arguments), values.get(sources), values.get(sourcepath), values.get(classpath));
+                    task.parallelism = values.get(parallelism);
+                    return task;
+                };
             }
         }
     }
@@ -233,8 +251,13 @@ public sealed abstract class TaskModel {
             @Override
             public Function<Values, Tool> build(Builder<Tool> builder) {
                 var name = builder.field("name", task -> task.name, String.class);
+                var parallelism = builder.field("parallelism", task -> task.parallelism, String.class);
                 var arguments = builder.field("args", task -> task.args, TypeToken.getParameterized(List.class, Argument.class).getType());
-                return values -> new Tool(values.get(name), values.get(arguments));
+                return values -> {
+                    var task = new Tool(values.get(name), values.get(arguments));
+                    task.parallelism = values.get(parallelism);
+                    return task;
+                };
             }
         }
     }
@@ -252,8 +275,13 @@ public sealed abstract class TaskModel {
             @Override
             public Function<Values, DownloadAssets> build(Builder<DownloadAssets> builder) {
                 var name = builder.field("name", task -> task.name, String.class);
+                var parallelism = builder.field("parallelism", task -> task.parallelism, String.class);
                 var versionJson = builder.field("versionJson", task -> task.versionJson, Input.class);
-                return values -> new DownloadAssets(values.get(name), values.get(versionJson));
+                return values -> {
+                    var task = new DownloadAssets(values.get(name), values.get(versionJson));
+                    task.parallelism = values.get(parallelism);
+                    return task;
+                };
             }
         }
     }
@@ -268,7 +296,12 @@ public sealed abstract class TaskModel {
             @Override
             public Function<Values, DownloadManifest> build(Builder<DownloadManifest> builder) {
                 var name = builder.field("name", task -> task.name, String.class);
-                return values -> new DownloadManifest(values.get(name));
+                var parallelism = builder.field("parallelism", task -> task.parallelism, String.class);
+                return values -> {
+                    var task = new DownloadManifest(values.get(name));
+                    task.parallelism = values.get(parallelism);
+                    return task;
+                };
             }
         }
     }
@@ -288,9 +321,14 @@ public sealed abstract class TaskModel {
             @Override
             public Function<Values, DownloadJson> build(Builder<DownloadJson> builder) {
                 var name = builder.field("name", task -> task.name, String.class);
+                var parallelism = builder.field("parallelism", task -> task.parallelism, String.class);
                 var version = builder.field("version", task -> task.version, Input.class);
                 var manifest = builder.field("manifest", task -> task.manifest, Input.class);
-                return values -> new DownloadJson(values.get(name), values.get(version), values.get(manifest));
+                return values -> {
+                    var task = new DownloadJson(values.get(name), values.get(version), values.get(manifest));
+                    task.parallelism = values.get(parallelism);
+                    return task;
+                };
             }
         }
     }
@@ -310,9 +348,14 @@ public sealed abstract class TaskModel {
             @Override
             public Function<Values, DownloadDistribution> build(Builder<DownloadDistribution> builder) {
                 var name = builder.field("name", task -> task.name, String.class);
+                var parallelism = builder.field("parallelism", task -> task.parallelism, String.class);
                 var distribution = builder.field("distribution", task -> task.distribution, Input.class);
                 var versionJson = builder.field("versionJson", task -> task.versionJson, Input.class);
-                return values -> new DownloadDistribution(values.get(name), values.get(distribution), values.get(versionJson));
+                return values -> {
+                    var task = new DownloadDistribution(values.get(name), values.get(distribution), values.get(versionJson));
+                    task.parallelism = values.get(parallelism);
+                    return task;
+                };
             }
         }
     }
@@ -332,9 +375,14 @@ public sealed abstract class TaskModel {
             @Override
             public Function<Values, DownloadMappings> build(Builder<DownloadMappings> builder) {
                 var name = builder.field("name", task -> task.name, String.class);
+                var parallelism = builder.field("parallelism", task -> task.parallelism, String.class);
                 var distribution = builder.field("distribution", task -> task.distribution, Input.class);
                 var versionJson = builder.field("versionJson", task -> task.versionJson, Input.class);
-                return values -> new DownloadMappings(values.get(name), values.get(distribution), values.get(versionJson));
+                return values -> {
+                    var task = new DownloadMappings(values.get(name), values.get(distribution), values.get(versionJson));
+                    task.parallelism = values.get(parallelism);
+                    return task;
+                };
             }
         }
     }
@@ -354,9 +402,14 @@ public sealed abstract class TaskModel {
             @Override
             public Function<Values, SplitClassesResources> build(Builder<SplitClassesResources> builder) {
                 var name = builder.field("name", task -> task.name, String.class);
+                var parallelism = builder.field("parallelism", task -> task.parallelism, String.class);
                 var input = builder.field("input", task -> task.input, Input.class);
                 var excludePattern = builder.field("excludePattern", task -> task.excludePattern, Input.class);
-                return values -> new SplitClassesResources(values.get(name), values.get(input), values.get(excludePattern));
+                return values -> {
+                    var task = new SplitClassesResources(values.get(name), values.get(input), values.get(excludePattern));
+                    task.parallelism = values.get(parallelism);
+                    return task;
+                };
             }
         }
     }
@@ -376,9 +429,14 @@ public sealed abstract class TaskModel {
             @Override
             public Function<Values, ListClasspath> build(Builder<ListClasspath> builder) {
                 var name = builder.field("name", task -> task.name, String.class);
+                var parallelism = builder.field("parallelism", task -> task.parallelism, String.class);
                 var versionJson = builder.field("versionJson", task -> task.versionJson, Input.class);
                 var additionalLibraries = builder.field("additionalLibraries", task -> task.additionalLibraries, Input.class);
-                return values -> new ListClasspath(values.get(name), values.get(versionJson), values.get(additionalLibraries));
+                return values -> {
+                    var task = new ListClasspath(values.get(name), values.get(versionJson), values.get(additionalLibraries));
+                    task.parallelism = values.get(parallelism);
+                    return task;
+                };
             }
         }
     }
@@ -396,8 +454,13 @@ public sealed abstract class TaskModel {
             @Override
             public Function<Values, InjectSources> build(Builder<InjectSources> builder) {
                 var name = builder.field("name", task -> task.name, String.class);
+                var parallelism = builder.field("parallelism", task -> task.parallelism, String.class);
                 var inputs = builder.field("inputs", task -> task.inputs, TypeToken.getParameterized(List.class, Input.class).getType());
-                return values -> new InjectSources(values.get(name), values.get(inputs));
+                return values -> {
+                    var task = new InjectSources(values.get(name), values.get(inputs));
+                    task.parallelism = values.get(parallelism);
+                    return task;
+                };
             }
         }
     }
@@ -417,9 +480,14 @@ public sealed abstract class TaskModel {
             @Override
             public Function<Values, PatchSources> build(Builder<PatchSources> builder) {
                 var name = builder.field("name", task -> task.name, String.class);
+                var parallelism = builder.field("parallelism", task -> task.parallelism, String.class);
                 var input = builder.field("input", task -> task.input, Input.class);
                 var patches = builder.field("patches", task -> task.patches, Input.class);
-                return values -> new PatchSources(values.get(name), values.get(input), values.get(patches));
+                return values -> {
+                    var task = new PatchSources(values.get(name), values.get(input), values.get(patches));
+                    task.parallelism = values.get(parallelism);
+                    return task;
+                };
             }
         }
     }
@@ -439,9 +507,14 @@ public sealed abstract class TaskModel {
             @Override
             public Function<Values, RetrieveData> build(Builder<RetrieveData> builder) {
                 var name = builder.field("name", task -> task.name, String.class);
+                var parallelism = builder.field("parallelism", task -> task.parallelism, String.class);
                 var input = builder.field("input", task -> task.input, Input.class);
                 var path = builder.field("path", task -> task.path, Input.class);
-                return values -> new RetrieveData(values.get(name), values.get(input), values.get(path));
+                return values -> {
+                    var task = new RetrieveData(values.get(name), values.get(input), values.get(path));
+                    task.parallelism = values.get(parallelism);
+                    return task;
+                };
             }
         }
     }

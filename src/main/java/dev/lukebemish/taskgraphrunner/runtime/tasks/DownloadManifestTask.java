@@ -20,7 +20,7 @@ public class DownloadManifestTask extends Task {
     private static final Logger LOGGER = LoggerFactory.getLogger(DownloadManifestTask.class);
 
     public DownloadManifestTask(TaskModel.DownloadManifest model) {
-        super(model.name(), model.type());
+        super(model);
     }
 
     @Override
