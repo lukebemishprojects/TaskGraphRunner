@@ -26,9 +26,11 @@ import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.ThreadFactory;
 
 public class Invocation implements Context, AutoCloseable {
     private static final Logger LOGGER = LoggerFactory.getLogger(Invocation.class);
+    private static final ThreadFactory THREAD_FACTORY = Thread.ofVirtual().name("TaskGraphRunner-", 1).factory();
 
     private final Path cacheDirectory;
 
@@ -39,7 +41,7 @@ public class Invocation implements Context, AutoCloseable {
     private final ArtifactManifest artifactManifest = ArtifactManifest.delegating(artifactManifests);
     private final boolean useCached;
     private final AssetDownloadOptions assetOptions;
-    private final ExecutorService executor = Executors.newThreadPerTaskExecutor(Thread.ofVirtual().name("TaskGraphRunner-", 1).factory());
+    private final ExecutorService executor = Executors.newThreadPerTaskExecutor(THREAD_FACTORY);
 
     public Invocation(Path cacheDirectory, AssetDownloadOptions assetDownloadOptions, boolean useCached) throws IOException {
         this.cacheDirectory = cacheDirectory;
@@ -162,10 +164,7 @@ public class Invocation implements Context, AutoCloseable {
             map.put(entry.getKey().name(), entry.getValue());
         }
         try {
-            execute(tasks.entrySet(), entry -> {
-                var task = getTask(entry.getKey());
-                task.execute(this, entry.getValue());
-            });
+            Task.executeTasks(this, tasks);
         } finally {
             for (var task : this.tasks.values()) {
                 try {

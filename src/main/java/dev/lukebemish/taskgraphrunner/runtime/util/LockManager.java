@@ -93,6 +93,7 @@ public class LockManager {
 
     public Lock lock(String key) {
         var lockFile = getLockFile(key);
+        LOGGER.debug("Acquiring lock on {} at {}", key, lockFile);
 
         // Try 5 times to get a file channel -- this doesn't block anything yet
         FileChannel channel = null;
@@ -116,7 +117,7 @@ public class LockManager {
             }
         }
         if (channel == null) {
-            throw new UncheckedIOException("Failed to create lock-file " + lockFile, last);
+            throw new UncheckedIOException("Failed to create lock-file " + lockFile + " for key "+key, last);
         }
 
         // Now we try to get a lock on the file which will block other precesses
@@ -140,7 +141,7 @@ public class LockManager {
             try {
                 if (System.currentTimeMillis() - startTime > 1000 * 60 * 5) {
                     // If we've waited more than two minutes, fail
-                    throw new RuntimeException("Failed to acquire lock on " + lockFile +"; timed out after 5 minutes");
+                    throw new RuntimeException("Failed to acquire lock on " + lockFile +" for key "+key+"; timed out after 5 minutes");
                 }
                 Thread.sleep(1000L);
             } catch (InterruptedException e) {
@@ -149,9 +150,9 @@ public class LockManager {
             }
         }
 
-        LOGGER.debug("Acquired lock on {}", lockFile);
+        LOGGER.debug("Acquired lock on {} at {}", key, lockFile);
 
-        return new Lock(fileLock);
+        return new Lock(fileLock, key);
     }
 
     public void cleanOldLocks(int lockDuration) {
@@ -221,13 +222,16 @@ public class LockManager {
 
     public static final class Lock implements LockLike {
         private final FileLock fileLock;
+        private final String key;
 
-        private Lock(FileLock fileLock) {
+        private Lock(FileLock fileLock, String key) {
             this.fileLock = fileLock;
+            this.key = key;
         }
 
         @Override
         public void close() {
+            LOGGER.debug("Releasing lock on {}", key);
             try {
                 fileLock.release();
             } catch (IOException e) {

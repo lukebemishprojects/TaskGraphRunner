@@ -36,14 +36,18 @@ import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
+import java.util.Queue;
 import java.util.Set;
-import java.util.concurrent.locks.ReentrantLock;
+import java.util.concurrent.atomic.AtomicInteger;
 
 public abstract class Task implements RecordedInput {
     private static final Logger LOGGER = LoggerFactory.getLogger(Task.class);
@@ -69,106 +73,170 @@ public abstract class Task implements RecordedInput {
     private volatile byte[] contentsHash;
 
     private boolean executed;
-    private boolean running;
-    private boolean locking;
 
     private LockManager.LockLike lock;
-    private int lockedDependents;
+    private final AtomicInteger lockedDependents = new AtomicInteger(0);
 
     protected int cacheVersion() {
         return 1;
     }
 
-    private final ReentrantLock executionLock = new ReentrantLock();
-    private final ReentrantLock lockRelatedLock = new ReentrantLock();
+    private final Object unlockSynchronization = new Object();
 
     private String lockFileName(Context context) {
         return context.taskDirectory(this).getFileName().toString();
     }
 
     private void unlock0() {
-        lockRelatedLock.lock();
-        try {
-            if (lockedDependents <= 0 && lock != null) {
+        synchronized (unlockSynchronization) {
+            var remaining = lockedDependents.get();
+            LOGGER.debug("{} has {} dependents remaining", name, remaining);
+            if (remaining <= 0 && lock != null) {
                 lock.close();
                 lock = null;
             }
-        } finally {
-            lockRelatedLock.unlock();
         }
     }
 
     private void unlockDependencies(Context context) {
-        lockRelatedLock.lock();
-        try {
+        synchronized (unlockSynchronization) {
             for (var input : inputs()) {
                 for (var dependency : input.dependencies()) {
                     var task = context.getTask(dependency);
-                    task.lockedDependents--;
+                    task.lockedDependents.decrementAndGet();
                     task.unlock0();
                 }
             }
-        } finally {
-            lockRelatedLock.unlock();
         }
-    }
-
-    private void lock1(Context context) {
-        this.lock = context.lockManager().managerScopedLock(lockFileName(context));
     }
 
     private void lock0(Context context) {
-        if (locking) {
-            throw new IllegalStateException("Task `" + name + "` has a circular dependency");
-        }
-        locking = true;
-        lockRelatedLock.lock();
-        try {
-            if (this.lock == null) {
-                lock1(context);
-                for (var input : inputs()) {
-                    for (var dependency : input.dependencies()) {
-                        var task = context.getTask(dependency);
-                        task.lockedDependents++;
-                        task.lock0(context);
-                    }
-                }
-            }
-            locking = false;
-        } finally {
-            lockRelatedLock.unlock();
+        if (this.lock == null) {
+            LOGGER.debug("Acquiring lock for task {}", name());
+            this.lock = context.lockManager().managerScopedLock(lockFileName(context));
         }
     }
 
     public void clean() {
-        lockRelatedLock.lock();
-        try {
+        synchronized (unlockSynchronization) {
             if (lock != null) {
                 lock.close();
                 lock = null;
             }
-        } finally {
-            lockRelatedLock.unlock();
         }
     }
 
     private SafeClosable unlockOnCompletion(Context context) {
-        return () -> {
-            unlockDependencies(context);
-            this.unlock0();
-        };
+        return () -> unlockDependencies(context);
     }
 
-    private SafeClosable lockRoot(Context context) {
-        context.lockManager().acquisition(() -> {
-            this.lockedDependents++;
-            // locking does not need to be synchronized as that's already handled by the ROOT lock
-            lock0(context);
-        });
-        return () -> {
-            this.lockedDependents--;
-            this.unlock0();
-        };
+    private record GraphNode(Task task, List<GraphNode> dependents, Map<String, GraphNode> dependentMap, Map<String, Path> outputs) {
+        boolean executed() {
+            return task.isExecuted();
+        }
+
+        boolean ready(Context context) {
+            for (var i : task.inputs()) {
+                for (var dep : i.dependencies()) {
+                    if (!context.getTask(dep).isExecuted()) {
+                        return false;
+                    }
+                }
+            }
+            return true;
+        }
+
+        List<GraphNode> next(Context context) {
+            return dependents.stream().filter(node -> node.ready(context)).toList();
+        }
+    }
+
+    private record Action(String task, Map<String, Path> outputs) {}
+
+    private static Collection<GraphNode> assemble(Context context, Map<String, Map<String, Path>> actions) {
+        Map<String, GraphNode> nodes = new HashMap<>();
+        Queue<Action> queue = new ArrayDeque<>();
+        for (var entry : actions.entrySet()) {
+            queue.add(new Action(entry.getKey(), entry.getValue()));
+        }
+        while (!queue.isEmpty()) {
+            var top = queue.poll();
+            var taskName = top.task;
+            var outputs = top.outputs;
+            var task = context.getTask(taskName);
+            var newNode = nodes.compute(taskName, (name, node) -> {
+                if (node == null) {
+                    return new GraphNode(task, new ArrayList<>(), new HashMap<>(), outputs);
+                } else {
+                    node.outputs.putAll(outputs);
+                }
+                return node;
+            });
+            for (var input : task.inputs()) {
+                for (var dependency : input.dependencies()) {
+                    nodes.compute(dependency, (name, node) -> {
+                        if (node == null) {
+                            var list = new ArrayList<GraphNode>();
+                            list.add(newNode);
+                            var map = new HashMap<String, GraphNode>();
+                            map.put(taskName, newNode);
+                            return new GraphNode(context.getTask(dependency), list, map, new HashMap<>());
+                        } else {
+                            if (!node.dependentMap.containsKey(taskName)) {
+                                node.dependents.add(newNode);
+                                node.dependentMap.put(taskName, newNode);
+                            }
+                        }
+                        return node;
+                    });
+                    queue.add(new Action(dependency, new HashMap<>()));
+                }
+            }
+        }
+        return nodes.values();
+    }
+
+    static void executeTasks(Context context, Map<String, Map<String, Path>> actions) {
+        var originalNodes = assemble(context, actions);
+        Map<String, GraphNode> nodes = new HashMap<>();
+        for (var node : originalNodes) {
+            if (node.ready(context)) {
+                nodes.put(node.task.name(), node);
+            }
+        }
+        while (!nodes.isEmpty()) {
+            context.execute(nodes.values(), node -> {
+                LOGGER.debug("Executing task {} which is a dependency of {}", node.task.name(), node.dependentMap.keySet());
+                node.task.lockedDependents.set(1+node.dependents.size());
+                node.task.lock0(context);
+                try {
+                    node.task.execute(context);
+                    for (var entry : node.outputs.entrySet()) {
+                        var outputPath = context.taskOutputPath(node.task, entry.getKey());
+                        try {
+                            Files.copy(outputPath, entry.getValue(), StandardCopyOption.REPLACE_EXISTING);
+                        } catch (IOException e) {
+                            throw new UncheckedIOException(e);
+                        }
+                    }
+                } finally {
+                    node.task.lockedDependents.getAndDecrement();
+                    node.task.unlock0();
+                }
+            });
+            Map<String, GraphNode> newNodes = new HashMap<>();
+            for (var node : nodes.values()) {
+                for (var next : node.next(context)) {
+                    newNodes.put(next.task.name(), next);
+                }
+            }
+            nodes = newNodes;
+        }
+        for (var node : originalNodes) {
+            if (!node.executed()) {
+                throw new IllegalStateException("Task `" + node.task.name() + "` was not executed, likely due to a circular dependency");
+            }
+        }
     }
 
     private interface SafeClosable extends AutoCloseable {
@@ -176,46 +244,29 @@ public abstract class Task implements RecordedInput {
         void close();
     }
 
-    void execute(Context context, Map<String, Path> outputDestinations) {
-        executionLock.lock();
-        try (var ignored = lockRoot(context)) {
-            execute(context);
-            for (var entry : outputDestinations.entrySet()) {
-                var outputPath = context.taskOutputPath(this, entry.getKey());
-                try {
-                    Files.copy(outputPath, entry.getValue(), StandardCopyOption.REPLACE_EXISTING);
-                } catch (IOException e) {
-                    throw new UncheckedIOException(e);
-                }
-            }
-        } finally {
-            executionLock.unlock();
-        }
-    }
-
     boolean isExecuted() {
         return executed;
     }
 
     private void execute(Context context) {
-        executionLock.lock();
+        LOGGER.debug("Requested task {}", name());
         try {
             if (executed) {
                 return;
             }
-            if (running) {
-                throw new IllegalStateException("Task `" + name + "` has a circular dependency");
-            }
-            running = true;
             try (var ignored = unlockOnCompletion(context)) {
+                LOGGER.debug("Processing task {}", name());
                 // Run prerequisite tasks
                 Set<String> directDependencies = new HashSet<>();
                 for (TaskInput input : inputs()) {
                     directDependencies.addAll(input.dependencies());
                 }
-                context.execute(directDependencies, dep ->
-                    context.getTask(dep).execute(context)
-                );
+                for (String dependency : directDependencies) {
+                    var task = context.getTask(dependency);
+                    if (!task.isExecuted()) {
+                        throw new IllegalStateException("Task `" + name + "` has not been executed but was requested");
+                    }
+                }
                 var statePath = context.taskStatePath(this);
                 try {
                     Files.createDirectories(statePath.getParent());
@@ -256,7 +307,6 @@ public abstract class Task implements RecordedInput {
                             if (newInputState.equals(existingInputState)) {
                                 updateState(existingState, context);
                                 executed = true;
-                                running = false;
                                 LOGGER.info("Task `" + name + "` is up-to-date.");
                                 return;
                             }
@@ -272,12 +322,9 @@ public abstract class Task implements RecordedInput {
                 saveState(context);
                 LOGGER.info("Finished task `" + name + "`.");
                 executed = true;
-                running = false;
             }
         } catch (Exception e) {
             throw new RuntimeException("Exception in task "+name(),e);
-        } finally {
-            executionLock.unlock();
         }
     }
 
