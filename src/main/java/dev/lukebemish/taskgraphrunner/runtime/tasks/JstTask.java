@@ -126,6 +126,8 @@ public class JstTask extends JavaTask {
 
         if (parchmentData != null) {
             command.add("--enable-parchment");
+            // Might eventually look at making this configurable
+            command.add("--parchment-conflict-prefix=p");
             command.add("--parchment-mappings="+parchmentData.path(context).toAbsolutePath());
         }
 
