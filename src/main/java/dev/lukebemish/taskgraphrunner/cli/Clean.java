@@ -63,18 +63,21 @@ public class Clean implements Runnable {
         FileTime outdated = FileTime.from(Instant.now().minus(assetDuration, ChronoUnit.DAYS));
 
         if (Files.isDirectory(main.cacheDir.resolve("assets").resolve("indexes"))) {
-            List<Path> assetIndexes;
+            List<String> assetIndexesLocks = new ArrayList<>();
+            List<Path> assetIndexes = new ArrayList<>();
             try (var stream = Files.list(main.cacheDir.resolve("assets").resolve("indexes"))) {
-                assetIndexes = stream
+                stream
                     .filter(it -> it.getFileName().toString().endsWith(".json"))
-                    .toList();
+                    .forEach(p -> {
+                        assetIndexes.add(p);
+                        assetIndexesLocks.add("assetIndexes."+ p.getFileName());
+                    });
             } catch (IOException e) {
                 LOGGER.error("Issue listing asset indexes", e);
                 return;
             }
-            var objectsPath = main.cacheDir.resolve("assets").resolve("objects");
-            try (var ignored = lockManager.lockSingleFiles(assetIndexes);
-                 var ignored2 = lockManager.lockSingleFile(objectsPath)) {
+            try (var ignored = lockManager.lock("clean.assets");
+                 var ignored2 = lockManager.locks(assetIndexesLocks)) {
                 record IndexInfo(String name, FileTime lastAccess, Set<String> hashes) {}
                 var indexes = new ArrayList<IndexInfo>();
                 for (Path path : assetIndexes) {
@@ -159,7 +162,7 @@ public class Clean implements Runnable {
 
     private static void deleteOutdated(LockManager lockManager, Path dir, FileTime outdated, AtomicInteger deletedOutputs) {
         if (Files.isDirectory(dir)) {
-            try (var ignored = lockManager.lock(dir.getFileName().toString())) {
+            try (var ignored = lockManager.lock("task."+dir.getFileName().toString())) {
                 try (var files = Files.list(dir)) {
                     files.forEach(it -> {
                             try {

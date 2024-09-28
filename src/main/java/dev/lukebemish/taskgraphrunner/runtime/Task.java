@@ -61,11 +61,16 @@ public abstract class Task implements RecordedInput {
     private final String name;
     private final String type;
     private final @Nullable String parallelism;
+    private int outputId = 0;
 
     public Task(TaskModel model) {
         this.name = model.name();
         this.type = model.type();
         this.parallelism = model.parallelism;
+    }
+
+    public int outputId() {
+        return outputId;
     }
 
     public String name() {
@@ -82,61 +87,19 @@ public abstract class Task implements RecordedInput {
     private final AtomicBoolean executed = new AtomicBoolean(false);
     private final AtomicBoolean submitted = new AtomicBoolean(false);
 
-    private LockManager.LockLike lock;
-    private final AtomicInteger lockedDependents = new AtomicInteger(0);
     private final AtomicInteger remainingDependencies = new AtomicInteger(0);
 
     protected int cacheVersion() {
         return 1;
     }
 
-    private final Object unlockSynchronization = new Object();
-
     private String lockFileName(Context context) {
         return context.taskDirectory(this).getFileName().toString();
     }
 
-    private void unlock0() {
-        synchronized (unlockSynchronization) {
-            var remaining = lockedDependents.get();
-            LOGGER.debug("{} has {} dependents remaining", name, remaining);
-            if (remaining <= 0 && lock != null) {
-                lock.close();
-                lock = null;
-            }
-        }
-    }
-
-    private void unlockDependencies(Context context) {
-        synchronized (unlockSynchronization) {
-            for (var input : inputs()) {
-                for (var dependency : input.dependencies()) {
-                    var task = context.getTask(dependency);
-                    task.lockedDependents.decrementAndGet();
-                    task.unlock0();
-                }
-            }
-        }
-    }
-
-    private void lock0(Context context) {
-        if (this.lock == null) {
-            LOGGER.debug("Acquiring lock for task {}", name());
-            this.lock = context.lockManager().managerScopedLock(lockFileName(context));
-        }
-    }
-
-    public void clean() {
-        synchronized (unlockSynchronization) {
-            if (lock != null) {
-                lock.close();
-                lock = null;
-            }
-        }
-    }
-
-    private SafeClosable unlockOnCompletion(Context context) {
-        return () -> unlockDependencies(context);
+    private LockManager.LockLike lock(Context context) {
+        LOGGER.debug("Acquiring lock for task {}", name());
+        return context.lockManager().lock("task."+lockFileName(context));
     }
 
     private record GraphNode(Task task, List<GraphNode> dependents, Map<String, GraphNode> dependentMap, Map<String, Path> outputs) {}
@@ -192,9 +155,7 @@ public abstract class Task implements RecordedInput {
     private static void executeNode(Context context, Consumer<Future<?>> futureConsumer, GraphNode node) {
         futureConsumer.accept(context.submit(() -> {
             LOGGER.debug("Executing task {} which is a dependency of {}", node.task.name(), node.dependentMap.keySet());
-            node.task.lockedDependents.set(1+node.dependents.size());
-            node.task.lock0(context);
-            try {
+            try (var ignored = node.task.lock(context)) {
                 node.task.execute(context);
                 for (var entry : node.outputs.entrySet()) {
                     var outputPath = context.taskOutputPath(node.task, entry.getKey());
@@ -204,9 +165,6 @@ public abstract class Task implements RecordedInput {
                         throw new UncheckedIOException(e);
                     }
                 }
-            } finally {
-                node.task.lockedDependents.getAndDecrement();
-                node.task.unlock0();
             }
             for (var dependent : node.dependents) {
                 var remaining = dependent.task.remainingDependencies.decrementAndGet();
@@ -252,11 +210,6 @@ public abstract class Task implements RecordedInput {
         }
     }
 
-    private interface SafeClosable extends AutoCloseable {
-        @Override
-        void close();
-    }
-
     boolean isExecuted() {
         return executed.get();
     }
@@ -267,79 +220,102 @@ public abstract class Task implements RecordedInput {
             if (executed.get()) {
                 return;
             }
-            try (var ignored = unlockOnCompletion(context)) {
-                LOGGER.debug("Processing task {}", name());
-                // Run prerequisite tasks
-                Set<String> directDependencies = new HashSet<>();
-                for (TaskInput input : inputs()) {
-                    directDependencies.addAll(input.dependencies());
-                }
-                for (String dependency : directDependencies) {
-                    var task = context.getTask(dependency);
-                    if (!task.isExecuted()) {
-                        throw new IllegalStateException("Task `" + name + "` has not been executed but was requested");
-                    }
-                }
-                var statePath = context.taskStatePath(this);
-                try {
-                    Files.createDirectories(statePath.getParent());
-                } catch (IOException e) {
-                    throw new UncheckedIOException(e);
-                }
-                if (context.useCached() && Files.exists(statePath)) {
-                    try (var reader = Files.newBufferedReader(statePath, StandardCharsets.UTF_8)) {
-                        JsonObject existingState = GSON.fromJson(reader, JsonObject.class);
-                        JsonElement existingInputState = existingState.get("inputs");
-                        var targetHashes = existingState.get("hashes").getAsJsonObject();
-                        var lastExecutedJson = existingState.get("lastExecuted");
-                        long lastExecuted = 0;
-                        if (lastExecutedJson != null) {
-                            lastExecuted = lastExecutedJson.getAsLong();
-                        }
-                        boolean allOutputsMatch = true;
-                        for (var output : outputTypes().keySet()) {
-                            var oldHashElement = targetHashes.get(output);
-                            if (oldHashElement == null || !oldHashElement.isJsonPrimitive() || !oldHashElement.getAsJsonPrimitive().isString()) {
-                                allOutputsMatch = false;
-                                break;
-                            }
-                            var oldHash = oldHashElement.getAsString();
-                            var outputPath = context.taskOutputPath(this, output);
-                            if (!Files.exists(outputPath)) {
-                                allOutputsMatch = false;
-                                break;
-                            }
-                            var hash = HashUtils.hash(outputPath);
-                            if (!hash.equals(oldHash)) {
-                                allOutputsMatch = false;
-                                break;
-                            }
-                        }
-                        if (allOutputsMatch && upToDate(lastExecuted, context)) {
-                            JsonElement newInputState = recordedValue(context);
-                            if (newInputState.equals(existingInputState)) {
-                                updateState(existingState, context);
-                                executed.set(true);
-                                LOGGER.info("Task `" + name + "` is up-to-date.");
-                                return;
-                            }
-                        }
-                    } catch (Exception e) {
-                        // something went wrong -- let's log it, then keep going:
-                        LOGGER.info("Up-to-date check for task `" + name + "` failed", e);
-                    }
-                }
-                // Something was not up-to-date -- so we run everything
-                LOGGER.info("Starting task `" + name + "`.");
-                if (parallelism == null) {
-                    run(context);
-                } else {
-                    context.lockManager().enforcedParallelism(context, parallelism, () -> run(context));
-                }
-                saveState(context);
-                LOGGER.info("Finished task `" + name + "`.");
-                executed.set(true);
+            LOGGER.debug("Processing task {}", name());
+            // Run prerequisite tasks
+            Set<String> directDependencies = new HashSet<>();
+            for (TaskInput input : inputs()) {
+                directDependencies.addAll(input.dependencies());
             }
+            for (String dependency : directDependencies) {
+                var task = context.getTask(dependency);
+                if (!task.isExecuted()) {
+                    throw new IllegalStateException("Task `" + name + "` has not been executed but was requested");
+                }
+            }
+            var statePath = context.taskStatePath(this);
+            try {
+                Files.createDirectories(statePath.getParent());
+            } catch (IOException e) {
+                throw new UncheckedIOException(e);
+            }
+            Map<String, String> currentHashes = new HashMap<>();
+            if (context.useCached() && Files.exists(statePath)) {
+                try (var reader = Files.newBufferedReader(statePath, StandardCharsets.UTF_8)) {
+                    JsonObject existingState = GSON.fromJson(reader, JsonObject.class);
+                    JsonElement existingInputState = existingState.get("inputs");
+                    var targetHashes = existingState.get("hashes").getAsJsonObject();
+                    var lastExecutedJson = existingState.get("lastExecuted");
+                    this.outputId = existingState.get("outputId").getAsInt();
+                    long lastExecuted = 0;
+                    if (lastExecutedJson != null) {
+                        lastExecuted = lastExecutedJson.getAsLong();
+                    }
+                    boolean allOutputsMatch = true;
+                    for (var output : outputTypes().keySet()) {
+                        var oldHashElement = targetHashes.get(output);
+                        if (oldHashElement == null || !oldHashElement.isJsonPrimitive() || !oldHashElement.getAsJsonPrimitive().isString()) {
+                            allOutputsMatch = false;
+                            break;
+                        }
+                        var oldHash = oldHashElement.getAsString();
+                        var outputPath = context.taskOutputPath(this, output);
+                        if (!Files.exists(outputPath)) {
+                            allOutputsMatch = false;
+                            break;
+                        }
+                        var hash = HashUtils.hash(outputPath);
+                        currentHashes.put(output, hash);
+                        if (!hash.equals(oldHash)) {
+                            allOutputsMatch = false;
+                            break;
+                        }
+                    }
+                    if (allOutputsMatch && upToDate(lastExecuted, context)) {
+                        JsonElement newInputState = recordedValue(context);
+                        if (newInputState.equals(existingInputState)) {
+                            updateState(existingState, context);
+                            executed.set(true);
+                            LOGGER.info("Task `" + name + "` is up-to-date.");
+                            return;
+                        }
+                    }
+                } catch (Exception e) {
+                    // something went wrong -- let's log it, then keep going:
+                    LOGGER.info("Up-to-date check for task `" + name + "` failed", e);
+                }
+            }
+            outputId++;
+            // Something was not up-to-date -- so we run everything
+            LOGGER.info("Starting task `" + name + "`.");
+            if (parallelism == null) {
+                run(context);
+            } else {
+                context.lockManager().enforcedParallelism(context, parallelism, () -> run(context));
+            }
+            boolean nothingChanged = true;
+            for (var output : outputTypes().keySet()) {
+                var outputPath = context.taskOutputPath(this, output);
+                var existingHash = currentHashes.get(output);
+                if (existingHash == null) {
+                    nothingChanged = false;
+                    break;
+                }
+                var newHash = HashUtils.hash(outputPath);
+                if (!existingHash.equals(newHash)) {
+                    nothingChanged = false;
+                    break;
+                }
+            }
+            if (nothingChanged) {
+                for (var output : outputTypes().keySet()) {
+                    var outputPath = context.taskOutputPath(this, output);
+                    Files.delete(outputPath);
+                }
+                outputId--;
+            }
+            saveState(context);
+            LOGGER.info("Finished task `" + name + "`.");
+            executed.set(true);
         } catch (Exception e) {
             throw new RuntimeException("Exception in task "+name(),e);
         }
@@ -372,12 +348,13 @@ public abstract class Task implements RecordedInput {
                     throw new RuntimeException(e);
                 }
             } else {
-                throw new RuntimeException("Output file for `"+output+"`not found after task `"+name+"` completed");
+                throw new RuntimeException("Output file for `"+output+"` at `"+outputPath+"` not found after task `"+name+"` completed");
             }
         }
         JsonObject state = new JsonObject();
         state.add("inputs", inputState);
         state.add("hashes", outputHashes);
+        state.addProperty("outputId", outputId);
         var currentTime = System.currentTimeMillis();
         state.add("lastAccessed", new JsonPrimitive(currentTime));
         state.add("lastExecuted", new JsonPrimitive(currentTime));

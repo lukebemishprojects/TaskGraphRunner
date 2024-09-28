@@ -6,8 +6,6 @@ import dev.lukebemish.taskgraphrunner.model.Output;
 import dev.lukebemish.taskgraphrunner.runtime.util.JsonUtils;
 import dev.lukebemish.taskgraphrunner.runtime.util.LockManager;
 import org.jspecify.annotations.Nullable;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
@@ -29,7 +27,6 @@ import java.util.concurrent.Future;
 import java.util.concurrent.ThreadFactory;
 
 public class Invocation implements Context, AutoCloseable {
-    private static final Logger LOGGER = LoggerFactory.getLogger(Invocation.class);
     private static final ThreadFactory THREAD_FACTORY = Thread.ofVirtual().name("TaskGraphRunner-", 1).factory();
 
     private final Path cacheDirectory;
@@ -72,7 +69,7 @@ public class Invocation implements Context, AutoCloseable {
         }
         task.hashContents(RecordedInput.ByteConsumer.of(digestContents), this);
         var contentsHash = HexFormat.of().formatHex(digestContents.digest());
-        return taskDirectory(task).resolve(contentsHash+"."+outputName+"."+outputType);
+        return taskDirectory(task).resolve(contentsHash+"."+outputName+"."+task.outputId()+"."+outputType);
     }
 
     @Override
@@ -163,17 +160,7 @@ public class Invocation implements Context, AutoCloseable {
             var map = tasks.computeIfAbsent(taskName, k -> new LinkedHashMap<>());
             map.put(entry.getKey().name(), entry.getValue());
         }
-        try {
-            Task.executeTasks(this, tasks);
-        } finally {
-            for (var task : this.tasks.values()) {
-                try {
-                    task.clean();
-                } catch (Throwable t) {
-                    LOGGER.error("Failed to clean up task `{}`", task.name(), t);
-                }
-            }
-        }
+        Task.executeTasks(this, tasks);
         if (taskRecordJson != null) {
             JsonObject executed = new JsonObject();
             for (var task : this.tasks.values()) {

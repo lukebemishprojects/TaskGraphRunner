@@ -44,7 +44,7 @@ public class Mark implements Runnable {
                     for (var entry : tasks.entrySet()) {
                         var task = entry.getValue();
                         var state = Paths.get(task.state);
-                        try (var ignored = lockManager.lock(state.getParent().getFileName().toString())) {
+                        try (var ignored = lockManager.lock("task."+state.getParent().getFileName().toString())) {
                             for (var output : task.outputs) {
                                 var outputPath = Paths.get(output);
                                 if (Files.exists(outputPath)) {

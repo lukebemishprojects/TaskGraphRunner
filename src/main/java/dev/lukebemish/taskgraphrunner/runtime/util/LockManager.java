@@ -18,14 +18,12 @@ import java.nio.file.attribute.FileTime;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
-import java.util.concurrent.locks.ReentrantLock;
 import java.util.stream.IntStream;
 
 public class LockManager {
@@ -33,10 +31,6 @@ public class LockManager {
     private static final String ROOT_LOCK = "root";
 
     private final Path lockDirectory;
-
-    private final Map<String, Lock> scopedLocks = new HashMap<>();
-    private final Map<String, Integer> scopedLockCounts = new HashMap<>();
-    private final ReentrantLock scopedLock = new ReentrantLock();
 
     private static final Map<String, Semaphore> parallelLocks = new ConcurrentHashMap<>();
 
@@ -65,32 +59,6 @@ public class LockManager {
         }
     }
 
-    private void closeScopedLock(String key) {
-        scopedLock.lock();
-        try {
-            var count = scopedLockCounts.compute(key, (k, v) -> v == null ? null : v - 1);
-            if (count == null || count <= 0) {
-                var lock = scopedLocks.remove(key);
-                if (lock != null) {
-                    lock.close();
-                }
-            }
-        } finally {
-            scopedLock.unlock();
-        }
-    }
-
-    public LockLike managerScopedLock(String cacheKey) {
-        scopedLock.lock();
-        try {
-            scopedLockCounts.compute(cacheKey, (key, count) -> count == null ? 1 : count + 1);
-            scopedLocks.computeIfAbsent(cacheKey, this::lock);
-        } finally {
-            scopedLock.unlock();
-        }
-        return new ManagedLock(cacheKey);
-    }
-
     public LockManager(Path lockDirectory) throws IOException {
         Files.createDirectories(lockDirectory);
         this.lockDirectory = lockDirectory;
@@ -104,23 +72,6 @@ public class LockManager {
         try (var ignored = lock(ROOT_LOCK)) {
             var locks = keys.stream().map(this::lock).toList();
             return new Locks(locks);
-        }
-    }
-
-    public Lock lockSingleFile(Path path) {
-        return lock(HashUtils.hash(path.toAbsolutePath().toString()));
-    }
-
-    public Locks lockSingleFiles(List<Path> paths) {
-        try (var ignored = lock(ROOT_LOCK)) {
-            var locks = paths.stream().map(this::lockSingleFile).toList();
-            return new Locks(locks);
-        }
-    }
-
-    public void acquisition(Runnable runnable) {
-        try (var ignored = lock(ROOT_LOCK)) {
-            runnable.run();
         }
     }
 
@@ -284,19 +235,6 @@ public class LockManager {
     public sealed interface LockLike extends AutoCloseable {
         @Override
         void close();
-    }
-
-    public final class ManagedLock implements LockLike {
-        private final String key;
-
-        private ManagedLock(String key) {
-            this.key = key;
-        }
-
-        @Override
-        public void close() {
-            closeScopedLock(key);
-        }
     }
 
     public static final class Locks implements LockLike {

@@ -73,7 +73,7 @@ public final class AssetsUtils {
         var targetPath = assetOptions.assetRoot().resolve("indexes").resolve(assetIndexVersion + ".json");
         if (!Files.exists(targetPath) || assetOptions.redownloadAssets()) {
             JsonObject json;
-            try (var ignored = context.lockManager().lockSingleFile(targetPath)) {
+            try (var ignored = context.lockManager().lock("assetIndexes."+targetPath.getFileName())) {
                 DownloadUtils.download(spec, targetPath);
 
                 // Download the assets
@@ -97,7 +97,7 @@ public final class AssetsUtils {
                 })
                 .toList();
 
-            try (var ignored = context.lockManager().lockSingleFiles(targets.stream().map(DownloadTarget::target).toList())) {
+            try (var ignored = context.lockManager().locks(targets.stream().map(t -> "assets."+t.target().getFileName().toString()).toList())) {
                 var futures = new ArrayList<Future<?>>();
                 for (var target : targets) {
                     futures.add(context.submit(() -> {
