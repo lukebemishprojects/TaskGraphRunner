@@ -232,9 +232,9 @@ public final class SingleVersionGenerator {
                 List.of(
                     Argument.direct("-jar"),
                     new Argument.FileInput(null, new Input.DirectInput(Value.tool("accesstransformers")), PathSensitivity.NONE),
-                    Argument.direct("--inFile"),
+                    Argument.direct("--inJar"),
                     new Argument.FileInput(null, new Input.TaskInput(binariesTask), PathSensitivity.NONE),
-                    Argument.direct("--outFile"),
+                    Argument.direct("--outJar"),
                     new Argument.FileOutput(null, "output", "jar"),
                     new Argument.Zip("--atFile={}", List.of(new Input.ParameterInput(options.accessTransformersParameter)), PathSensitivity.NONE)
                 )
