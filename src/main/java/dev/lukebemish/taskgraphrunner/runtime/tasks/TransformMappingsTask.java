@@ -192,8 +192,7 @@ public class TransformMappingsTask extends Task {
             @Override
             public IMappingFile makeMappings(Context context) {
                 IMappingFile mappings = source.makeMappings(context);
-                mappings.reverse();
-                return mappings;
+                return mappings.reverse();
             }
 
             @Override
