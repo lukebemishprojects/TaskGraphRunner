@@ -151,7 +151,7 @@ public class Clean implements Runnable {
         }
         var deletedOutputs = new AtomicInteger();
         try (var dirs = Files.list(main.cacheDir.resolve("results"))) {
-            dirs.forEach(dir -> deleteOutdated(lockManager, dir, outdated, deletedOutputs));
+            dirs.forEach(dir -> deleteOutdated(lockManager, dir, outdated, deletedOutputs, true));
         } catch (IOException e) {
             LOGGER.error("Issue deleting output directories", e);
         }
@@ -160,23 +160,23 @@ public class Clean implements Runnable {
         }
     }
 
-    private static void deleteOutdated(LockManager lockManager, Path dir, FileTime outdated, AtomicInteger deletedOutputs) {
+    private static void deleteOutdated(LockManager lockManager, Path dir, FileTime outdated, AtomicInteger deletedOutputs, boolean root) {
         if (Files.isDirectory(dir)) {
-            try (var ignored = lockManager.lock("task."+dir.getFileName().toString())) {
+            try (var ignored = root ? lockManager.lock("task." + dir.getFileName().toString()) : null) {
                 try (var files = Files.list(dir)) {
                     files.forEach(it -> {
-                            try {
-                                BasicFileAttributes attributes = Files.readAttributes(it, BasicFileAttributes.class);
-                                if (attributes.isRegularFile() && attributes.lastAccessTime().compareTo(outdated) < 0) {
-                                    Files.delete(it);
-                                    deletedOutputs.incrementAndGet();
-                                } else if (attributes.isDirectory()) {
-                                    deleteOutdated(lockManager, it, outdated, deletedOutputs);
-                                }
-                            } catch (IOException e) {
-                                LOGGER.error("Issue while cleaning output file {} in {}", it.getFileName(), dir.getFileName(), e);
+                        try {
+                            BasicFileAttributes attributes = Files.readAttributes(it, BasicFileAttributes.class);
+                            if (attributes.isRegularFile() && attributes.lastAccessTime().compareTo(outdated) < 0) {
+                                Files.delete(it);
+                                deletedOutputs.incrementAndGet();
+                            } else if (attributes.isDirectory()) {
+                                deleteOutdated(lockManager, it, outdated, deletedOutputs, false);
                             }
-                        });
+                        } catch (IOException e) {
+                            LOGGER.error("Issue while cleaning output file {} in {}", it.getFileName(), dir.getFileName(), e);
+                        }
+                    });
                 } catch (IOException e) {
                     LOGGER.error("Issue deleting output files in {}", dir.getFileName(), e);
                 }
