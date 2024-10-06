@@ -273,7 +273,6 @@ public abstract class Task implements RecordedInput {
                     if (allOutputsMatch && upToDate(lastExecuted, context)) {
                         JsonElement newInputState = recordedValue(context);
                         if (newInputState.equals(existingInputState)) {
-                            updateState(existingState, context);
                             executed.set(true);
                             LOGGER.info("Task `" + name + "` is up-to-date.");
                             return;
@@ -321,15 +320,6 @@ public abstract class Task implements RecordedInput {
         }
     }
 
-    private void updateState(JsonObject oldState, Context context) {
-        oldState.add("lastAccessed", new JsonPrimitive(System.currentTimeMillis()));
-        try (var writer = Files.newBufferedWriter(context.taskStatePath(this), StandardCharsets.UTF_8)) {
-            GSON.toJson(oldState, writer);
-        } catch (IOException e) {
-            throw new RuntimeException(e);
-        }
-    }
-
     public final String type() {
         return type;
     }
@@ -356,7 +346,6 @@ public abstract class Task implements RecordedInput {
         state.add("hashes", outputHashes);
         state.addProperty("outputId", outputId);
         var currentTime = System.currentTimeMillis();
-        state.add("lastAccessed", new JsonPrimitive(currentTime));
         state.add("lastExecuted", new JsonPrimitive(currentTime));
         try (var writer = Files.newBufferedWriter(statePath, StandardCharsets.UTF_8)) {
             GSON.toJson(state, writer);
