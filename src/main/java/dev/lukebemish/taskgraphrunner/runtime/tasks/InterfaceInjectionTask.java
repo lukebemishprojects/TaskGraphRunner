@@ -201,12 +201,11 @@ public class InterfaceInjectionTask extends Task {
             StringBuilder baseBinary = new StringBuilder();
 
             if (tokens.peek() == Token.Simple.OPEN) {
-                baseBinary.append("L").append(name.name().replace('.', '/'));
+                baseBinary.append("L").append(forName(classFinder, name.name()));
                 while (tokens.peek() == Token.Simple.OPEN) {
                     readTypeArguments(baseBinary, classFinder, tokens);
                     if (tokens.peek() instanceof Token.Name innerName && innerName.name().startsWith(".")) {
-                        var withoutLeadingDot = innerName.name().substring(1);
-                        baseBinary.append(withoutLeadingDot.replace('.', '/'));
+                        baseBinary.append(innerName.name());
                         tokens.pop();
                     } else {
                         break;
