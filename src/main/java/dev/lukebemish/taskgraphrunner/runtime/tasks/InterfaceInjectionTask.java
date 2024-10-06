@@ -202,7 +202,16 @@ public class InterfaceInjectionTask extends Task {
 
             if (tokens.peek() == Token.Simple.OPEN) {
                 baseBinary.append("L").append(name.name().replace('.', '/'));
-                readTypeArguments(baseBinary, classFinder, tokens);
+                while (tokens.peek() == Token.Simple.OPEN) {
+                    readTypeArguments(baseBinary, classFinder, tokens);
+                    if (tokens.peek() instanceof Token.Name innerName && innerName.name().startsWith(".")) {
+                        var withoutLeadingDot = innerName.name().substring(1);
+                        baseBinary.append(withoutLeadingDot.replace('.', '/'));
+                        tokens.pop();
+                    } else {
+                        break;
+                    }
+                }
                 baseBinary.append(";");
             } else {
                 baseBinary.append(forName(classFinder, name.name()));
