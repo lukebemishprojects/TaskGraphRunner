@@ -16,8 +16,10 @@ import java.nio.file.attribute.FileTime;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
@@ -162,35 +164,45 @@ public class Clean implements Runnable {
 
     private static void deleteOutdated(LockManager lockManager, Path dir, FileTime outdated, AtomicInteger deletedOutputs, boolean root) {
         if (Files.isDirectory(dir)) {
-            try (var ignored = root ? lockManager.lock("task." + dir.getFileName().toString()) : null) {
-                try (var files = Files.list(dir)) {
-                    files.forEach(it -> {
-                        try {
-                            BasicFileAttributes attributes = Files.readAttributes(it, BasicFileAttributes.class);
-                            if (attributes.isRegularFile() && attributes.lastAccessTime().compareTo(outdated) < 0) {
-                                Files.delete(it);
-                                deletedOutputs.incrementAndGet();
-                            } else if (attributes.isDirectory()) {
-                                deleteOutdated(lockManager, it, outdated, deletedOutputs, false);
-                            }
-                        } catch (IOException e) {
-                            LOGGER.error("Issue while cleaning output file {} in {}", it.getFileName(), dir.getFileName(), e);
-                        }
-                    });
-                } catch (IOException e) {
-                    LOGGER.error("Issue deleting output files in {}", dir.getFileName(), e);
-                }
-                try (var files = Files.list(dir)) {
-                    if (files.findFirst().isEmpty()) {
-                        try {
-                            Files.delete(dir);
-                        } catch (IOException e) {
-                            LOGGER.error("Failed to delete empty output directory {}", dir, e);
-                        }
+            try (var files = Files.list(dir)) {
+                Map<String, Set<Path>> groups = new HashMap<>();
+                files.sorted().forEach(it -> {
+                    String name = it.getFileName().toString();
+                    if (name.contains(".")) {
+                        name = name.substring(0, name.indexOf('.'));
                     }
-                } catch (IOException e) {
-                    LOGGER.error("Issue deleting empty output directories", e);
+                    groups.computeIfAbsent(name, k -> new HashSet<>()).add(it);
+                });
+                groups.forEach((name, paths) -> {
+                    try (var ignored = root ? lockManager.lock("task." + dir.getFileName().toString() + "." + name) : null) {
+                        paths.forEach(it -> {
+                            try {
+                                BasicFileAttributes attributes = Files.readAttributes(it, BasicFileAttributes.class);
+                                if (attributes.isRegularFile() && attributes.lastAccessTime().compareTo(outdated) < 0) {
+                                    Files.delete(it);
+                                    deletedOutputs.incrementAndGet();
+                                } else if (attributes.isDirectory()) {
+                                    deleteOutdated(lockManager, it, outdated, deletedOutputs, false);
+                                }
+                            } catch (IOException e) {
+                                LOGGER.error("Issue while cleaning output file {} in {}", it.getFileName(), dir.getFileName(), e);
+                            }
+                        });
+                    }
+                });
+            } catch (IOException e) {
+                LOGGER.error("Issue deleting output files in {}", dir.getFileName(), e);
+            }
+            try (var files = Files.list(dir)) {
+                if (files.findFirst().isEmpty()) {
+                    try {
+                        Files.delete(dir);
+                    } catch (IOException e) {
+                        LOGGER.error("Failed to delete empty output directory {}", dir, e);
+                    }
                 }
+            } catch (IOException e) {
+                LOGGER.error("Issue deleting empty output directories", e);
             }
         }
     }

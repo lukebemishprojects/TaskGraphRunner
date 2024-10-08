@@ -94,7 +94,7 @@ public abstract class Task implements RecordedInput {
     }
 
     private String lockFileName(Context context) {
-        return context.taskDirectory(this).getFileName().toString();
+        return context.taskDirectory(this).getFileName().toString()+"."+context.taskWorkingDirectory(this).getFileName().toString();
     }
 
     private LockManager.LockLike lock(Context context) {
