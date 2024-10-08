@@ -13,7 +13,9 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.function.Function;
+import java.util.stream.Stream;
 
 @JsonAdapter(TaskModel.Adapter.class)
 public sealed abstract class TaskModel {
@@ -31,6 +33,8 @@ public sealed abstract class TaskModel {
     public final String type() {
         return Adapter.TASK_TYPE_NAMES.get(getClass());
     }
+
+    public abstract Stream<Input> inputs();
 
     static final class Adapter extends GsonAdapter<TaskModel> {
         private static final Map<String, TypeAdapter<? extends TaskModel>> TASK_TYPES;
@@ -112,6 +116,11 @@ public sealed abstract class TaskModel {
             this.source = source;
         }
 
+        @Override
+        public Stream<Input> inputs() {
+            return source.inputs();
+        }
+
         private static final class Specialized extends FieldAdapter<TransformMappings> {
             @Override
             public Function<Values, TransformMappings> build(Builder<TransformMappings> builder) {
@@ -139,6 +148,11 @@ public sealed abstract class TaskModel {
             this.input = input;
             this.interfaceInjection = interfaceInjection;
             this.classpath.addAll(classpath);
+        }
+
+        @Override
+        public Stream<Input> inputs() {
+            return Stream.concat(Stream.of(input, interfaceInjection), classpath.stream());
         }
 
         private static final class Specialized extends FieldAdapter<InterfaceInjection> {
@@ -178,6 +192,17 @@ public sealed abstract class TaskModel {
             if (jstClasspath != null) {
                 this.jstClasspath.addAll(jstClasspath);
             }
+        }
+
+        @Override
+        public Stream<Input> inputs() {
+            return Stream.of(
+                Stream.of(input, accessTransformers, interfaceInjection, parchmentData).filter(Objects::nonNull),
+                classpath.stream(),
+                jstClasspath.stream(),
+                jvmArgs.stream().flatMap(Argument::inputs),
+                args.stream().flatMap(Argument::inputs)
+            ).flatMap(Function.identity());
         }
 
         private static final class Specialized extends FieldAdapter<Jst> {
@@ -220,6 +245,16 @@ public sealed abstract class TaskModel {
             this.classpath.addAll(classpath);
         }
 
+        @Override
+        public Stream<Input> inputs() {
+            return Stream.of(
+                Stream.of(sources),
+                sourcepath.stream(),
+                classpath.stream(),
+                args.stream().flatMap(Argument::inputs)
+            ).flatMap(Function.identity());
+        }
+
         private static final class Specialized extends FieldAdapter<Compile> {
             @Override
             public Function<Values, Compile> build(Builder<Compile> builder) {
@@ -247,6 +282,11 @@ public sealed abstract class TaskModel {
             this.args.addAll(args);
         }
 
+        @Override
+        public Stream<Input> inputs() {
+            return args.stream().flatMap(Argument::inputs);
+        }
+
         private static final class Specialized extends FieldAdapter<Tool> {
             @Override
             public Function<Values, Tool> build(Builder<Tool> builder) {
@@ -271,6 +311,11 @@ public sealed abstract class TaskModel {
             this.versionJson = versionJson;
         }
 
+        @Override
+        public Stream<Input> inputs() {
+            return Stream.of(versionJson);
+        }
+
         private static final class Specialized extends FieldAdapter<DownloadAssets> {
             @Override
             public Function<Values, DownloadAssets> build(Builder<DownloadAssets> builder) {
@@ -292,6 +337,11 @@ public sealed abstract class TaskModel {
             super(name);
         }
 
+        @Override
+        public Stream<Input> inputs() {
+            return Stream.empty();
+        }
+
         private static final class Specialized extends FieldAdapter<DownloadManifest> {
             @Override
             public Function<Values, DownloadManifest> build(Builder<DownloadManifest> builder) {
@@ -308,13 +358,18 @@ public sealed abstract class TaskModel {
 
     @JsonAdapter(Adapter.class)
     public static final class DownloadJson extends TaskModel {
-        public Input version;
+        public InputValue version;
         public Input manifest;
 
-        public DownloadJson(String name, Input version, Input manifest) {
+        public DownloadJson(String name, InputValue version, Input manifest) {
             super(name);
             this.version = version;
             this.manifest = manifest;
+        }
+
+        @Override
+        public Stream<Input> inputs() {
+            return Stream.of(manifest);
         }
 
         private static final class Specialized extends FieldAdapter<DownloadJson> {
@@ -322,7 +377,7 @@ public sealed abstract class TaskModel {
             public Function<Values, DownloadJson> build(Builder<DownloadJson> builder) {
                 var name = builder.field("name", task -> task.name, String.class);
                 var parallelism = builder.field("parallelism", task -> task.parallelism, String.class);
-                var version = builder.field("version", task -> task.version, Input.class);
+                var version = builder.field("version", task -> task.version, InputValue.class);
                 var manifest = builder.field("manifest", task -> task.manifest, Input.class);
                 return values -> {
                     var task = new DownloadJson(values.get(name), values.get(version), values.get(manifest));
@@ -335,13 +390,18 @@ public sealed abstract class TaskModel {
 
     @JsonAdapter(Adapter.class)
     public static final class DownloadDistribution extends TaskModel {
-        public Input distribution;
+        public InputValue distribution;
         public Input versionJson;
 
-        public DownloadDistribution(String name, Input distribution, Input versionJson) {
+        public DownloadDistribution(String name, InputValue distribution, Input versionJson) {
             super(name);
             this.distribution = distribution;
             this.versionJson = versionJson;
+        }
+
+        @Override
+        public Stream<Input> inputs() {
+            return Stream.of(versionJson);
         }
 
         private static final class Specialized extends FieldAdapter<DownloadDistribution> {
@@ -349,7 +409,7 @@ public sealed abstract class TaskModel {
             public Function<Values, DownloadDistribution> build(Builder<DownloadDistribution> builder) {
                 var name = builder.field("name", task -> task.name, String.class);
                 var parallelism = builder.field("parallelism", task -> task.parallelism, String.class);
-                var distribution = builder.field("distribution", task -> task.distribution, Input.class);
+                var distribution = builder.field("distribution", task -> task.distribution, InputValue.class);
                 var versionJson = builder.field("versionJson", task -> task.versionJson, Input.class);
                 return values -> {
                     var task = new DownloadDistribution(values.get(name), values.get(distribution), values.get(versionJson));
@@ -362,13 +422,18 @@ public sealed abstract class TaskModel {
 
     @JsonAdapter(Adapter.class)
     public static final class DownloadMappings extends TaskModel {
-        public Input distribution;
+        public InputValue distribution;
         public Input versionJson;
 
-        public DownloadMappings(String name, Input distribution, Input versionJson) {
+        public DownloadMappings(String name, InputValue distribution, Input versionJson) {
             super(name);
             this.distribution = distribution;
             this.versionJson = versionJson;
+        }
+
+        @Override
+        public Stream<Input> inputs() {
+            return Stream.of(versionJson);
         }
 
         private static final class Specialized extends FieldAdapter<DownloadMappings> {
@@ -376,7 +441,7 @@ public sealed abstract class TaskModel {
             public Function<Values, DownloadMappings> build(Builder<DownloadMappings> builder) {
                 var name = builder.field("name", task -> task.name, String.class);
                 var parallelism = builder.field("parallelism", task -> task.parallelism, String.class);
-                var distribution = builder.field("distribution", task -> task.distribution, Input.class);
+                var distribution = builder.field("distribution", task -> task.distribution, InputValue.class);
                 var versionJson = builder.field("versionJson", task -> task.versionJson, Input.class);
                 return values -> {
                     var task = new DownloadMappings(values.get(name), values.get(distribution), values.get(versionJson));
@@ -390,12 +455,17 @@ public sealed abstract class TaskModel {
     @JsonAdapter(Adapter.class)
     public static final class SplitClassesResources extends TaskModel {
         public Input input;
-        public @Nullable Input excludePattern;
+        public @Nullable InputValue excludePattern;
 
-        public SplitClassesResources(String name, Input input, @Nullable Input excludePattern) {
+        public SplitClassesResources(String name, Input input, @Nullable InputValue excludePattern) {
             super(name);
             this.input = input;
             this.excludePattern = excludePattern;
+        }
+
+        @Override
+        public Stream<Input> inputs() {
+            return Stream.of(input);
         }
 
         private static final class Specialized extends FieldAdapter<SplitClassesResources> {
@@ -404,7 +474,7 @@ public sealed abstract class TaskModel {
                 var name = builder.field("name", task -> task.name, String.class);
                 var parallelism = builder.field("parallelism", task -> task.parallelism, String.class);
                 var input = builder.field("input", task -> task.input, Input.class);
-                var excludePattern = builder.field("excludePattern", task -> task.excludePattern, Input.class);
+                var excludePattern = builder.field("excludePattern", task -> task.excludePattern, InputValue.class);
                 return values -> {
                     var task = new SplitClassesResources(values.get(name), values.get(input), values.get(excludePattern));
                     task.parallelism = values.get(parallelism);
@@ -417,12 +487,17 @@ public sealed abstract class TaskModel {
     @JsonAdapter(Adapter.class)
     public static final class ListClasspath extends TaskModel {
         public Input versionJson;
-        public @Nullable Input additionalLibraries;
+        public @Nullable InputValue additionalLibraries;
 
-        public ListClasspath(String name, Input versionJson, @Nullable Input additionalLibraries) {
+        public ListClasspath(String name, Input versionJson, @Nullable InputValue additionalLibraries) {
             super(name);
             this.versionJson = versionJson;
             this.additionalLibraries = additionalLibraries;
+        }
+
+        @Override
+        public Stream<Input> inputs() {
+            return Stream.of(versionJson);
         }
 
         private static final class Specialized extends FieldAdapter<ListClasspath> {
@@ -431,7 +506,7 @@ public sealed abstract class TaskModel {
                 var name = builder.field("name", task -> task.name, String.class);
                 var parallelism = builder.field("parallelism", task -> task.parallelism, String.class);
                 var versionJson = builder.field("versionJson", task -> task.versionJson, Input.class);
-                var additionalLibraries = builder.field("additionalLibraries", task -> task.additionalLibraries, Input.class);
+                var additionalLibraries = builder.field("additionalLibraries", task -> task.additionalLibraries, InputValue.class);
                 return values -> {
                     var task = new ListClasspath(values.get(name), values.get(versionJson), values.get(additionalLibraries));
                     task.parallelism = values.get(parallelism);
@@ -448,6 +523,11 @@ public sealed abstract class TaskModel {
         public InjectSources(String name, List<Input> inputs) {
             super(name);
             this.inputs.addAll(inputs);
+        }
+
+        @Override
+        public Stream<Input> inputs() {
+            return inputs.stream();
         }
 
         private static final class Specialized extends FieldAdapter<InjectSources> {
@@ -476,6 +556,11 @@ public sealed abstract class TaskModel {
             this.patches = patches;
         }
 
+        @Override
+        public Stream<Input> inputs() {
+            return Stream.of(input, patches);
+        }
+
         private static final class Specialized extends FieldAdapter<PatchSources> {
             @Override
             public Function<Values, PatchSources> build(Builder<PatchSources> builder) {
@@ -495,12 +580,17 @@ public sealed abstract class TaskModel {
     @JsonAdapter(Adapter.class)
     public static final class RetrieveData extends TaskModel {
         public Input input;
-        public Input path;
+        public InputValue path;
 
-        public RetrieveData(String name, Input input, Input path) {
+        public RetrieveData(String name, Input input, InputValue path) {
             super(name);
             this.input = input;
             this.path = path;
+        }
+
+        @Override
+        public Stream<Input> inputs() {
+            return Stream.of(input);
         }
 
         private static final class Specialized extends FieldAdapter<RetrieveData> {
@@ -509,7 +599,7 @@ public sealed abstract class TaskModel {
                 var name = builder.field("name", task -> task.name, String.class);
                 var parallelism = builder.field("parallelism", task -> task.parallelism, String.class);
                 var input = builder.field("input", task -> task.input, Input.class);
-                var path = builder.field("path", task -> task.path, Input.class);
+                var path = builder.field("path", task -> task.path, InputValue.class);
                 return values -> {
                     var task = new RetrieveData(values.get(name), values.get(input), values.get(path));
                     task.parallelism = values.get(parallelism);

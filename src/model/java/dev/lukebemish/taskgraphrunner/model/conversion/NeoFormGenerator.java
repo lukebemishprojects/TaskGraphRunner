@@ -5,6 +5,7 @@ import dev.lukebemish.taskgraphrunner.model.Argument;
 import dev.lukebemish.taskgraphrunner.model.Config;
 import dev.lukebemish.taskgraphrunner.model.Distribution;
 import dev.lukebemish.taskgraphrunner.model.Input;
+import dev.lukebemish.taskgraphrunner.model.InputValue;
 import dev.lukebemish.taskgraphrunner.model.Output;
 import dev.lukebemish.taskgraphrunner.model.PathSensitivity;
 import dev.lukebemish.taskgraphrunner.model.TaskModel;
@@ -137,7 +138,7 @@ public final class NeoFormGenerator {
             config.tasks.add(new TaskModel.RetrieveData(
                 "generated_retrieve_" + key,
                 new Input.ParameterInput("neoFormZip"),
-                new Input.DirectInput(new Value.StringValue(path))
+                new InputValue.DirectInput(new Value.StringValue(path))
             ));
         }
 
@@ -164,27 +165,27 @@ public final class NeoFormGenerator {
                 case "downloadManifest" -> new TaskModel.DownloadManifest(step.name());
                 case "downloadJson" -> new TaskModel.DownloadJson(
                     step.name(),
-                    new Input.DirectInput(new Value.StringValue(source.version())),
+                    new InputValue.DirectInput(new Value.StringValue(source.version())),
                     new Input.TaskInput(new Output(downloadManifestName, "output"))
                 );
                 case "downloadClient" -> new TaskModel.DownloadDistribution(
                     step.name(),
-                    new Input.DirectInput(new Value.StringValue("client")),
+                    new InputValue.DirectInput(new Value.StringValue("client")),
                     new Input.TaskInput(new Output(downloadJsonName, "output"))
                 );
                 case "downloadServer" -> new TaskModel.DownloadDistribution(
                     step.name(),
-                    new Input.DirectInput(new Value.StringValue("server")),
+                    new InputValue.DirectInput(new Value.StringValue("server")),
                     new Input.TaskInput(new Output(downloadJsonName, "output"))
                 );
                 case "downloadClientMappings" -> new TaskModel.DownloadMappings(
                     step.name(),
-                    new Input.DirectInput(new Value.StringValue("client")),
+                    new InputValue.DirectInput(new Value.StringValue("client")),
                     new Input.TaskInput(new Output(downloadJsonName, "output"))
                 );
                 case "downloadServerMappings" -> new TaskModel.DownloadMappings(
                     step.name(),
-                    new Input.DirectInput(new Value.StringValue("server")),
+                    new InputValue.DirectInput(new Value.StringValue("server")),
                     new Input.TaskInput(new Output(downloadJsonName, "output"))
                 );
                 case "strip" -> new TaskModel.SplitClassesResources(
@@ -195,7 +196,7 @@ public final class NeoFormGenerator {
                 case "listLibraries" -> new TaskModel.ListClasspath(
                     step.name(),
                     new Input.TaskInput(new Output(downloadJsonName, "output")),
-                    new Input.ParameterInput("additionalLibraries")
+                    new InputValue.ParameterInput("additionalLibraries")
                 );
                 case "inject" -> new TaskModel.InjectSources(
                     step.name(),
@@ -223,7 +224,7 @@ public final class NeoFormGenerator {
                         tool.args.add(processArgument(arg, step, source, listLibrariesName));
                     }
 
-                    tool.args.add(new Argument.ValueInput(null, new Input.DirectInput(new Value.StringValue("-jar"))));
+                    tool.args.add(new Argument.ValueInput(null, new InputValue.DirectInput(new Value.StringValue("-jar"))));
                     tool.args.add(new Argument.FileInput(null, new Input.DirectInput(Value.artifact(function.version())), PathSensitivity.NONE));
 
                     for (var arg : function.args()) {
@@ -264,7 +265,7 @@ public final class NeoFormGenerator {
                 "jstTransform",
                 List.of(),
                 List.of(
-                    new Argument.ValueInput(null, new Input.DirectInput(new Value.StringValue("--enable-linemapper"))),
+                    new Argument.ValueInput(null, new InputValue.DirectInput(new Value.StringValue("--enable-linemapper"))),
                     new Argument.FileOutput("--line-map-out={}", "linemap", "txt")
                 ),
                 new Input.TaskInput(sourcesTask),
@@ -293,13 +294,13 @@ public final class NeoFormGenerator {
             var recompile = new TaskModel.Compile(
                 "recompile",
                 List.of(
-                    new Argument.ValueInput(null, new Input.DirectInput(new Value.StringValue("--release"))),
-                    new Argument.ValueInput(null, new Input.DirectInput(new Value.StringValue(source.javaTarget() + ""))), // Target the release the neoform config targets
-                    new Argument.ValueInput(null, new Input.DirectInput(new Value.StringValue("-proc:none"))), // No APs in Minecraft's sources
-                    new Argument.ValueInput(null, new Input.DirectInput(new Value.StringValue("-nowarn"))), // We'll handle the diagnostics ourselves
-                    new Argument.ValueInput(null, new Input.DirectInput(new Value.StringValue("-g"))), // Gradle does it...
-                    new Argument.ValueInput(null, new Input.DirectInput(new Value.StringValue("-XDuseUnsharedTable=true"))), // Gradle does it?
-                    new Argument.ValueInput(null, new Input.DirectInput(new Value.StringValue("-implicit:none"))) // If we inject stubs, don't output those
+                    new Argument.ValueInput(null, new InputValue.DirectInput(new Value.StringValue("--release"))),
+                    new Argument.ValueInput(null, new InputValue.DirectInput(new Value.StringValue(source.javaTarget() + ""))), // Target the release the neoform config targets
+                    new Argument.ValueInput(null, new InputValue.DirectInput(new Value.StringValue("-proc:none"))), // No APs in Minecraft's sources
+                    new Argument.ValueInput(null, new InputValue.DirectInput(new Value.StringValue("-nowarn"))), // We'll handle the diagnostics ourselves
+                    new Argument.ValueInput(null, new InputValue.DirectInput(new Value.StringValue("-g"))), // Gradle does it...
+                    new Argument.ValueInput(null, new InputValue.DirectInput(new Value.StringValue("-XDuseUnsharedTable=true"))), // Gradle does it?
+                    new Argument.ValueInput(null, new InputValue.DirectInput(new Value.StringValue("-implicit:none"))) // If we inject stubs, don't output those
                 ),
                 new Input.TaskInput(sourcesTask),
                 List.of(new Input.ListInput(
@@ -330,11 +331,11 @@ public final class NeoFormGenerator {
             var fixLineNumbers = new TaskModel.Tool(
                 "fixLineNumbers",
                 List.of(
-                    new Argument.ValueInput(null, new Input.DirectInput(new Value.StringValue("-jar"))),
+                    new Argument.ValueInput(null, new InputValue.DirectInput(new Value.StringValue("-jar"))),
                     new Argument.FileInput(null, new Input.DirectInput(Value.tool("linemapper")), PathSensitivity.NONE),
-                    new Argument.ValueInput(null, new Input.DirectInput(new Value.StringValue("--input"))),
+                    new Argument.ValueInput(null, new InputValue.DirectInput(new Value.StringValue("--input"))),
                     new Argument.FileInput(null, new Input.TaskInput(binariesTask), PathSensitivity.NONE),
-                    new Argument.ValueInput(null, new Input.DirectInput(new Value.StringValue("--output"))),
+                    new Argument.ValueInput(null, new InputValue.DirectInput(new Value.StringValue("--output"))),
                     new Argument.FileOutput(null, "output", "jar")
                 )
             );
@@ -375,9 +376,9 @@ public final class NeoFormGenerator {
                 case "libraries" -> new Argument.LibrariesFile(
                     null,
                     List.of(new Input.TaskInput(new Output(listLibrariesName, "output"))),
-                    new Input.DirectInput(new Value.StringValue("-e="))
+                    new InputValue.DirectInput(new Value.StringValue("-e="))
                     );
-                case "version" -> new Argument.ValueInput(null, new Input.DirectInput(new Value.StringValue(fullConfig.version())));
+                case "version" -> new Argument.ValueInput(null, new InputValue.DirectInput(new Value.StringValue(fullConfig.version())));
                 default -> {
                     var stepValue = step.values().get(name);
                     if (stepValue != null) {
@@ -398,7 +399,7 @@ public final class NeoFormGenerator {
             if (isVineflower(function)) {
                 arg = arg.replace("TRACE", "WARN");
             }
-            return new Argument.ValueInput(null, new Input.DirectInput(new Value.StringValue(arg)));
+            return new Argument.ValueInput(null, new InputValue.DirectInput(new Value.StringValue(arg)));
         }
     }
 

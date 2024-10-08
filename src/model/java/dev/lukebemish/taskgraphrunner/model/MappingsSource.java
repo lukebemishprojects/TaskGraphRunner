@@ -13,6 +13,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
+import java.util.stream.Stream;
 
 @JsonAdapter(MappingsSource.Adapter.class)
 public sealed interface MappingsSource {
@@ -67,12 +68,19 @@ public sealed interface MappingsSource {
         }
     }
 
+    Stream<Input> inputs();
+
     @JsonAdapter(Adapter.class)
     final class File implements MappingsSource {
         public Input input;
 
         public File(Input input) {
             this.input = input;
+        }
+
+        @Override
+        public Stream<Input> inputs() {
+            return Stream.of(input);
         }
 
         private static final class Specialized extends FieldAdapter<File> {
@@ -99,6 +107,11 @@ public sealed interface MappingsSource {
                 return values -> new Reversed(values.get(sourceKey));
             }
         }
+
+        @Override
+        public Stream<Input> inputs() {
+            return source.inputs();
+        }
     }
 
     @JsonAdapter(Adapter.class)
@@ -107,6 +120,11 @@ public sealed interface MappingsSource {
 
         public Merged(List<MappingsSource> sources) {
             this.sources.addAll(sources);
+        }
+
+        @Override
+        public Stream<Input> inputs() {
+            return sources.stream().flatMap(MappingsSource::inputs);
         }
 
         private static final class Specialized extends FieldAdapter<Merged> {
@@ -126,6 +144,11 @@ public sealed interface MappingsSource {
             this.files.addAll(files);
         }
 
+        @Override
+        public Stream<Input> inputs() {
+            return files.stream();
+        }
+
         private static final class Specialized extends FieldAdapter<MergedFiles> {
             @Override
             public Function<Values, MergedFiles> build(Builder<MergedFiles> builder) {
@@ -143,6 +166,11 @@ public sealed interface MappingsSource {
             this.sources.addAll(sources);
         }
 
+        @Override
+        public Stream<Input> inputs() {
+            return sources.stream().flatMap(MappingsSource::inputs);
+        }
+
         private static final class Specialized extends FieldAdapter<Chained> {
             @Override
             public Function<Values, Chained> build(Builder<Chained> builder) {
@@ -158,6 +186,11 @@ public sealed interface MappingsSource {
 
         public ChainedFiles(List<Input> files) {
             this.files.addAll(files);
+        }
+
+        @Override
+        public Stream<Input> inputs() {
+            return files.stream();
         }
 
         private static final class Specialized extends FieldAdapter<ChainedFiles> {

@@ -75,6 +75,7 @@ public class Main implements Runnable {
             .addSubcommand("vanilla", new Vanilla(this))
             .addSubcommand("daemon", new Daemon(this))
             .addSubcommand("mark", new Mark(this))
+            .addSubcommand("mermaid", new Mermaid(this))
             .execute(args);
     }
 

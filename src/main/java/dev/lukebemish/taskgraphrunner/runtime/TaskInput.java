@@ -4,6 +4,7 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import dev.lukebemish.taskgraphrunner.model.Input;
+import dev.lukebemish.taskgraphrunner.model.InputValue;
 import dev.lukebemish.taskgraphrunner.model.PathSensitivity;
 import dev.lukebemish.taskgraphrunner.model.Value;
 import dev.lukebemish.taskgraphrunner.model.WorkItem;
@@ -289,13 +290,13 @@ public sealed interface TaskInput extends RecordedInput {
         }
     }
 
-    static ValueInput value(String name, Input modelInput, WorkItem workItem) {
+    static ValueInput value(String name, InputValue modelInput, WorkItem workItem) {
         return value(name, modelInput, workItem, null);
     }
 
-    static ValueInput value(String name, Input modelInput, WorkItem workItem, Value defaultValue) {
+    static ValueInput value(String name, InputValue modelInput, WorkItem workItem, Value defaultValue) {
         return switch (modelInput) {
-            case Input.ParameterInput parameterInput -> {
+            case InputValue.ParameterInput parameterInput -> {
                 var value = workItem.parameters.get(parameterInput.parameter());
                 if (value == null) {
                     if (defaultValue == null) {
@@ -305,9 +306,8 @@ public sealed interface TaskInput extends RecordedInput {
                 }
                 yield new ValueInput(name, value);
             }
-            case Input.TaskInput ignored -> throw new IllegalArgumentException("Cannot convert task input to value");
-            case Input.DirectInput directInput -> new ValueInput(name, directInput.value());
-            case Input.ListInput listInput -> {
+            case InputValue.DirectInput directInput -> new ValueInput(name, directInput.value());
+            case InputValue.ListInput listInput -> {
                 List<Value> values = new ArrayList<>();
                 for (int i = 0; i < listInput.inputs().size(); i++) {
                     values.add(value(name+"_"+i, listInput.inputs().get(i), workItem, null).value());

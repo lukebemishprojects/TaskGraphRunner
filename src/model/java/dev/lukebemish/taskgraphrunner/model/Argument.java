@@ -14,6 +14,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
+import java.util.stream.Stream;
 
 @JsonAdapter(Argument.ArgumentAdapter.class)
 public abstract sealed class Argument {
@@ -27,8 +28,10 @@ public abstract sealed class Argument {
     }
 
     public static Argument.ValueInput direct(String value) {
-        return new Argument.ValueInput(null, new Input.DirectInput(new Value.StringValue(value)));
+        return new Argument.ValueInput(null, new InputValue.DirectInput(new Value.StringValue(value)));
     }
+
+    public abstract Stream<Input> inputs();
 
     static final class ArgumentAdapter extends GsonAdapter<Argument> {
         private static final Map<String, TypeAdapter<? extends Argument>> TASK_TYPES = Map.of(
@@ -51,8 +54,8 @@ public abstract sealed class Argument {
         @SuppressWarnings({"rawtypes", "unchecked"})
         @Override
         public void write(JsonWriter out, Argument value) throws IOException {
-            if (value instanceof ValueInput valueInput && (!(valueInput.input instanceof Input.DirectInput directInput) || directInput.value() instanceof Value.StringValue)) {
-                GSON.getAdapter(Input.class).write(out, valueInput.input);
+            if (value instanceof ValueInput valueInput && (!(valueInput.input instanceof InputValue.DirectInput directInput) || directInput.value() instanceof Value.StringValue)) {
+                GSON.getAdapter(InputValue.class).write(out, valueInput.input);
                 return;
             }
             out.beginObject();
@@ -69,7 +72,7 @@ public abstract sealed class Argument {
         @Override
         public Argument read(JsonReader in) throws IOException {
             if (in.peek() == JsonToken.STRING) {
-                return new ValueInput(null, GSON.getAdapter(Input.class).read(in));
+                return new ValueInput(null, GSON.getAdapter(InputValue.class).read(in));
             }
 
             JsonObject json = GSON.fromJson(in, JsonObject.class);
@@ -84,18 +87,23 @@ public abstract sealed class Argument {
 
     @JsonAdapter(ArgumentAdapter.class)
     public static final class ValueInput extends Argument {
-        public Input input;
+        public InputValue input;
 
-        public ValueInput(@Nullable String pattern, Input input) {
+        public ValueInput(@Nullable String pattern, InputValue input) {
             super(pattern);
             this.input = input;
+        }
+
+        @Override
+        public Stream<Input> inputs() {
+            return Stream.empty();
         }
 
         private static final class Specialized extends FieldAdapter<ValueInput> {
             @Override
             public Function<Values, ValueInput> build(Builder<ValueInput> builder) {
                 var pattern = builder.field("pattern", arg -> arg.pattern, String.class);
-                var input = builder.field("input", arg -> arg.input, Input.class);
+                var input = builder.field("input", arg -> arg.input, InputValue.class);
                 return values -> new ValueInput(values.get(pattern), values.get(input));
             }
         }
@@ -110,6 +118,11 @@ public abstract sealed class Argument {
             super(pattern);
             this.input = input;
             this.pathSensitivity = pathSensitivity;
+        }
+
+        @Override
+        public Stream<Input> inputs() {
+            return Stream.of(input);
         }
 
         private static final class Specialized extends FieldAdapter<FileInput> {
@@ -134,6 +147,11 @@ public abstract sealed class Argument {
             this.extension = extension;
         }
 
+        @Override
+        public Stream<Input> inputs() {
+            return Stream.empty();
+        }
+
         private static final class Specialized extends FieldAdapter<FileOutput> {
             @Override
             public Function<Values, FileOutput> build(Builder<FileOutput> builder) {
@@ -148,12 +166,17 @@ public abstract sealed class Argument {
     @JsonAdapter(ArgumentAdapter.class)
     public static final class LibrariesFile extends Argument {
         public final List<Input> input = new ArrayList<>();
-        public @Nullable Input prefix;
+        public @Nullable InputValue prefix;
 
-        public LibrariesFile(@Nullable String pattern, List<Input> input, @Nullable Input prefix) {
+        public LibrariesFile(@Nullable String pattern, List<Input> input, @Nullable InputValue prefix) {
             super(pattern);
             this.input.addAll(input);
             this.prefix = prefix;
+        }
+
+        @Override
+        public Stream<Input> inputs() {
+            return input.stream();
         }
 
         private static final class Specialized extends FieldAdapter<LibrariesFile> {
@@ -161,7 +184,7 @@ public abstract sealed class Argument {
             public Function<Values, LibrariesFile> build(Builder<LibrariesFile> builder) {
                 var pattern = builder.field("pattern", arg -> arg.pattern, String.class);
                 var input = builder.field("input", arg -> arg.input, TypeToken.getParameterized(List.class, Input.class).getType());
-                var prefix = builder.field("prefix", arg -> arg.prefix, Input.class);
+                var prefix = builder.field("prefix", arg -> arg.prefix, InputValue.class);
                 return values -> new LibrariesFile(values.get(pattern), values.get(input), values.get(prefix));
             }
         }
@@ -174,6 +197,11 @@ public abstract sealed class Argument {
         public Classpath(@Nullable String pattern, List<Input> input) {
             super(pattern);
             this.input.addAll(input);
+        }
+
+        @Override
+        public Stream<Input> inputs() {
+            return input.stream();
         }
 
         private static final class Specialized extends FieldAdapter<Classpath> {
@@ -195,6 +223,11 @@ public abstract sealed class Argument {
             super(pattern);
             this.inputs.addAll(inputs);
             this.pathSensitivity = pathSensitivity;
+        }
+
+        @Override
+        public Stream<Input> inputs() {
+            return inputs.stream();
         }
 
         private static final class Specialized extends FieldAdapter<Zip> {
