@@ -14,6 +14,7 @@ repositories {
 
 sourceSets {
     model {}
+    execution {}
 }
 
 java {
@@ -27,9 +28,22 @@ java {
         withSourcesJar()
         withJavadocJar()
     }
+    registerFeature('execution') {
+        usingSourceSet(sourceSets.execution)
+        withSourcesJar()
+        withJavadocJar()
+    }
 }
 
 def mainClassName = 'dev.lukebemish.taskgraphrunner.cli.Main'
+
+tasks.register('shadowBugWorkaroundNestedJar', Jar) {
+    archiveBaseName.set('shadow-bug-workaround-nested')
+    dependsOn tasks.executionJar
+    from (tasks.executionJar.archiveFile) {
+        rename { 'execution-daemon.jar' }
+    }
+}
 
 jar {
     manifest {
@@ -37,6 +51,10 @@ jar {
             'Main-Class': mainClassName,
             'Implementation-Version': project.version as String
         ])
+    }
+    dependsOn tasks.executionJar
+    from (tasks.executionJar.archiveFile) {
+        rename { 'execution-daemon.jar' }
     }
 }
 
@@ -47,9 +65,18 @@ shadowJar {
             'Implementation-Version': project.version as String
         ])
     }
+    dependsOn tasks.shadowBugWorkaroundNestedJar
+    from (tasks.shadowBugWorkaroundNestedJar.archiveFile)
 }
 
-AdhocComponentWithVariants javaComponent = (AdhocComponentWithVariants) components.java
+executionJar {
+    manifest {
+        attributes([
+            'Main-Class': 'dev.lukebemish.taskgraphrunner.execution.Daemon',
+            'Implementation-Version': project.version as String
+        ])
+    }
+}
 
 configurations {
     externalTools {
@@ -68,6 +95,8 @@ configurations {
 }
 
 dependencies {
+    // TODO: use conventions and cLibs
+    compileOnlyApi 'org.jspecify:jspecify:1.0.0'
     compileOnly 'org.jetbrains:annotations:24.1.0'
     implementation 'info.picocli:picocli:4.7.6'
     implementation 'org.slf4j:slf4j-simple:2.0.13'
@@ -81,6 +110,8 @@ dependencies {
     }
     modelApi 'com.google.code.gson:gson:2.11.0'
     modelCompileOnlyApi 'org.jspecify:jspecify:1.0.0'
+
+    executionCompileOnly 'org.jspecify:jspecify:1.0.0'
 }
 
 // This keeps the same versions at runtime and compile time

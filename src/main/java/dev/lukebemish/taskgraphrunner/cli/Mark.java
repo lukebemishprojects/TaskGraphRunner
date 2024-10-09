@@ -1,7 +1,7 @@
 package dev.lukebemish.taskgraphrunner.cli;
 
-import com.google.gson.JsonObject;
 import com.google.gson.reflect.TypeToken;
+import dev.lukebemish.taskgraphrunner.runtime.util.FileUtils;
 import dev.lukebemish.taskgraphrunner.runtime.util.JsonUtils;
 import dev.lukebemish.taskgraphrunner.runtime.util.LockManager;
 import picocli.CommandLine;
@@ -11,7 +11,6 @@ import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.nio.file.attribute.BasicFileAttributeView;
 import java.nio.file.attribute.FileTime;
 import java.time.Instant;
 import java.util.List;
@@ -50,19 +49,10 @@ public class Mark implements Runnable {
                             for (var output : task.outputs) {
                                 var outputPath = Paths.get(output);
                                 if (Files.exists(outputPath)) {
-                                    setLastAccessedTime(outputPath, now);
+                                    FileUtils.setLastAccessedTime(outputPath, now);
                                 }
                             }
-                            if (Files.exists(state)) {
-                                JsonObject stateObject;
-                                try (var stateReader = Files.newBufferedReader(state)) {
-                                    stateObject = JsonUtils.GSON.fromJson(stateReader, JsonObject.class);
-                                }
-                                stateObject.addProperty("lastAccessed", now.toMillis());
-                                try (var stateWriter = Files.newBufferedWriter(state)) {
-                                    JsonUtils.GSON.toJson(stateObject, stateWriter);
-                                }
-                            }
+                            FileUtils.setLastAccessedTime(state, now);
                         }
                     }
                 }
@@ -70,9 +60,5 @@ public class Mark implements Runnable {
         } catch (IOException e) {
             throw new UncheckedIOException(e);
         }
-    }
-
-    private static void setLastAccessedTime(Path path, FileTime now) throws IOException {
-        Files.getFileAttributeView(path, BasicFileAttributeView.class).setTimes(null, now, null);
     }
 }

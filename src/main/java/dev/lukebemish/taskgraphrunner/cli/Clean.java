@@ -30,14 +30,17 @@ public class Clean implements Runnable {
 
     private final Main main;
 
-    @CommandLine.Option(names = "--lock-duration", description = "Time to keep lock files for, in days.", arity = "*")
+    @CommandLine.Option(names = "--lock-duration", description = "Time to keep lock files for, in days.")
     int lockDuration = 1;
 
-    @CommandLine.Option(names = "--output-duration", description = "Time to keep task outputs for, in days.", arity = "*")
+    @CommandLine.Option(names = "--output-duration", description = "Time to keep task outputs for, in days.")
     int outputDuration = 30;
 
-    @CommandLine.Option(names = "--asset-duration", description = "Time to keep downloaded assets for, in days.", arity = "*")
+    @CommandLine.Option(names = "--asset-duration", description = "Time to keep downloaded assets for, in days.")
     int assetDuration = 30;
+
+    @CommandLine.Option(names = "--transform-duration", description = "Time to keep transformed tools for, in days.")
+    int transformDuration = 30;
 
     Clean(Main main) {
         this.main = main;
@@ -53,11 +56,55 @@ public class Clean implements Runnable {
             if (outputDuration >= 0) {
                 cleanTaskOutputs(lockManager);
             }
+            if (transformDuration >= 0) {
+                cleanTransforms(lockManager);
+            }
             if (lockDuration >= 0) {
                 lockManager.cleanOldLocks(lockDuration);
             }
         } catch (IOException e) {
             throw new UncheckedIOException(e);
+        }
+    }
+
+    private void cleanTransforms(LockManager lockManager) {
+        FileTime outdated = FileTime.from(Instant.now().minus(transformDuration, ChronoUnit.DAYS));
+
+        var matchingDirectories = new ArrayList<Path>();
+        try (var dirs = Files.list(main.cacheDir)) {
+            dirs.forEach(p -> {
+                if (Files.isDirectory(p) && p.getFileName().toString().startsWith("transform.")) {
+                    matchingDirectories.add(p);
+                }
+            });
+        } catch (IOException e) {
+            LOGGER.error("Issue listing transform directories", e);
+        }
+
+        for (var transformDir : matchingDirectories) {
+            try (var stream = Files.list(transformDir)) {
+                stream.forEach(path -> {
+                    if (path.endsWith(".jar.marker")) {
+                        try {
+                            BasicFileAttributes attributes = Files.readAttributes(path, BasicFileAttributes.class);
+                            if (attributes.isRegularFile() && attributes.lastAccessTime().compareTo(outdated) < 0) {
+                                var original = path.resolveSibling(path.getFileName().toString().substring(0, path.getFileName().toString().length() - ".marker".length()));
+                                try (var ignored = lockManager.lock(transformDir.getFileName() + "." + path.getFileName().toString().substring(0, path.getFileName().toString().length() - ".jar.marker".length()))) {
+                                    attributes = Files.readAttributes(path, BasicFileAttributes.class);
+                                    if (attributes.isRegularFile() && attributes.lastAccessTime().compareTo(outdated) < 0) {
+                                        Files.delete(original);
+                                        Files.delete(path);
+                                    }
+                                }
+                            }
+                        } catch (IOException e) {
+                            LOGGER.error("Issue deleting transform {}", path, e);
+                        }
+                    }
+                });
+            } catch (IOException e) {
+                LOGGER.error("Issue listing transform files in {}", transformDir, e);
+            }
         }
     }
 

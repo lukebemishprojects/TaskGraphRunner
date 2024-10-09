@@ -30,6 +30,8 @@ public interface Context {
 
     LockManager lockManager();
 
+    Path transformCachePath(int version);
+
     private void collectDependencies(Set<String> tasks, Task task, Set<String> visited) {
         if (visited.contains(task.name())) {
             throw new IllegalArgumentException("Circular dependency detected on task " + task.name());

@@ -8,6 +8,7 @@ import com.google.gson.JsonPrimitive;
 import dev.lukebemish.taskgraphrunner.model.TaskModel;
 import dev.lukebemish.taskgraphrunner.model.WorkItem;
 import dev.lukebemish.taskgraphrunner.runtime.tasks.CompileTask;
+import dev.lukebemish.taskgraphrunner.runtime.tasks.DaemonExecutedToolTask;
 import dev.lukebemish.taskgraphrunner.runtime.tasks.DownloadAssetsTask;
 import dev.lukebemish.taskgraphrunner.runtime.tasks.DownloadDistributionTask;
 import dev.lukebemish.taskgraphrunner.runtime.tasks.DownloadJsonTask;
@@ -125,10 +126,10 @@ public abstract class Task implements RecordedInput {
                 }
                 return node;
             });
-            int deps = 0;
+            Set<String> dependencies = new HashSet<>();
             for (var input : task.inputs()) {
                 for (var dependency : input.dependencies()) {
-                    deps++;
+                    dependencies.add(dependency);
                     nodes.compute(dependency, (name, node) -> {
                         if (node == null) {
                             var list = new ArrayList<GraphNode>();
@@ -147,7 +148,7 @@ public abstract class Task implements RecordedInput {
                     queue.add(new Action(dependency, new HashMap<>()));
                 }
             }
-            task.remainingDependencies.set(deps);
+            task.remainingDependencies.set(dependencies.size());
         }
         return nodes.values();
     }
@@ -205,7 +206,15 @@ public abstract class Task implements RecordedInput {
         }
         for (var node : originalNodes) {
             if (!node.task.executed.get()) {
-                throw new IllegalStateException("Task `" + node.task.name() + "` was not executed, likely due to a circular dependency");
+                var dependencies = new ArrayList<String>();
+                for (var input : node.task.inputs()) {
+                    for (var dependency : input.dependencies()) {
+                        if (!context.getTask(dependency).executed.get()) {
+                            dependencies.add(dependency);
+                        }
+                    }
+                }
+                throw new IllegalStateException("Task `" + node.task.name() + "` was not executed, likely due to a circular dependency; had "+node.task.remainingDependencies.get()+" unexecuted dependencies "+dependencies);
             }
         }
     }
@@ -450,6 +459,7 @@ public abstract class Task implements RecordedInput {
             case TaskModel.Jst jst -> new JstTask(jst, workItem, context);
             case TaskModel.DownloadAssets downloadAssets ->  new DownloadAssetsTask(downloadAssets, workItem, context);
             case TaskModel.TransformMappings transformMappings -> new TransformMappingsTask(transformMappings, workItem, context);
+            case TaskModel.DaemonExecutedTool daemonExecutedTool -> new DaemonExecutedToolTask(daemonExecutedTool, workItem, context);
         };
     }
 

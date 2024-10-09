@@ -136,6 +136,11 @@ public class Invocation implements Context, AutoCloseable {
     }
 
     @Override
+    public Path transformCachePath(int version) {
+        return cacheDirectory.resolve("transforms."+version);
+    }
+
+    @Override
     public boolean useCached() {
         return this.useCached;
     }

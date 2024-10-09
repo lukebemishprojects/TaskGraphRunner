@@ -218,24 +218,33 @@ public final class NeoFormGenerator {
                     if (function == null) {
                         throw new IllegalStateException("Unknown neoform step type: " + step.type());
                     }
-                    var tool = new TaskModel.Tool(step.name(), List.of());
+                    List<Argument> args;
+                    TaskModel tool;
+                    if (function.jvmArgs().isEmpty()) {
+                        TaskModel.Tool toolModel;
+                        tool = toolModel = new TaskModel.Tool(step.name(), List.of());
 
-                    for (var arg : function.jvmArgs()) {
-                        tool.args.add(processArgument(arg, step, source, listLibrariesName));
+                        for (var arg : function.jvmArgs()) {
+                            toolModel.args.add(processArgument(arg, step, source, listLibrariesName));
+                        }
+
+                        toolModel.args.add(new Argument.ValueInput(null, new InputValue.DirectInput(new Value.StringValue("-jar"))));
+                        toolModel.args.add(new Argument.FileInput(null, new Input.DirectInput(Value.artifact(function.version())), PathSensitivity.NONE));
+                        args = toolModel.args;
+                    } else {
+                        TaskModel.DaemonExecutedTool toolModel;
+                        tool = toolModel = new TaskModel.DaemonExecutedTool(step.name(), List.of(), new Input.DirectInput(Value.artifact(function.version())));
+                        args = toolModel.args;
                     }
-
-                    tool.args.add(new Argument.ValueInput(null, new InputValue.DirectInput(new Value.StringValue("-jar"))));
-                    tool.args.add(new Argument.FileInput(null, new Input.DirectInput(Value.artifact(function.version())), PathSensitivity.NONE));
-
                     for (var arg : function.args()) {
-                        tool.args.add(processArgument(arg, step, source, listLibrariesName));
+                        args.add(processArgument(arg, step, source, listLibrariesName));
                     }
 
                     if (isVineflower(function)) {
                         tool.parallelism = "decompile";
                         Output byName = null;
                         Output otherwise = null;
-                        for (var arg : tool.args) {
+                        for (var arg : args) {
                             if (arg instanceof Argument.FileOutput output) {
                                 if (output.name.equals("output")) {
                                     byName = new Output(step.name(), "output");
@@ -263,7 +272,6 @@ public final class NeoFormGenerator {
         if (useJst) {
             var jst = new TaskModel.Jst(
                 "jstTransform",
-                List.of(),
                 List.of(
                     new Argument.ValueInput(null, new InputValue.DirectInput(new Value.StringValue("--enable-linemapper"))),
                     new Argument.FileOutput("--line-map-out={}", "linemap", "txt")
@@ -328,16 +336,15 @@ public final class NeoFormGenerator {
                 throw new IllegalArgumentException("Cannot fix line numbers and recompile in the same neoform task graph -- binary output would be ambiguous");
             }
 
-            var fixLineNumbers = new TaskModel.Tool(
+            var fixLineNumbers = new TaskModel.DaemonExecutedTool(
                 "fixLineNumbers",
                 List.of(
-                    new Argument.ValueInput(null, new InputValue.DirectInput(new Value.StringValue("-jar"))),
-                    new Argument.FileInput(null, new Input.DirectInput(Value.tool("linemapper")), PathSensitivity.NONE),
                     new Argument.ValueInput(null, new InputValue.DirectInput(new Value.StringValue("--input"))),
                     new Argument.FileInput(null, new Input.TaskInput(binariesTask), PathSensitivity.NONE),
                     new Argument.ValueInput(null, new InputValue.DirectInput(new Value.StringValue("--output"))),
                     new Argument.FileOutput(null, "output", "jar")
-                )
+                ),
+                new Input.DirectInput(Value.tool("linemapper"))
             );
 
             if (vineflowerOutput != null) {

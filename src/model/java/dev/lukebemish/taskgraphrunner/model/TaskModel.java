@@ -62,6 +62,8 @@ public sealed abstract class TaskModel {
             taskTypeNames.put(PatchSources.class, "patchSources");
             taskTypes.put("retrieveData", new RetrieveData.Specialized());
             taskTypeNames.put(RetrieveData.class, "retrieveData");
+            taskTypes.put("daemonExecutedTool", new DaemonExecutedTool.Specialized());
+            taskTypeNames.put(DaemonExecutedTool.class, "daemonExecutedTool");
             taskTypes.put("tool", new Tool.Specialized());
             taskTypeNames.put(Tool.class, "tool");
             taskTypes.put("compile", new Compile.Specialized());
@@ -174,23 +176,21 @@ public sealed abstract class TaskModel {
 
     @JsonAdapter(Adapter.class)
     public static final class Jst extends TaskModel {
-        public final List<Argument> jvmArgs = new ArrayList<>();
         public final List<Argument> args = new ArrayList<>();
         public Input input;
         public final List<Input> classpath = new ArrayList<>();
-        public final List<Input> jstClasspath = new ArrayList<>();
+        public final List<Input> executionClasspath = new ArrayList<>();
         public @Nullable Input accessTransformers = null;
         public @Nullable Input interfaceInjection = null;
         public @Nullable Input parchmentData = null;
 
-        public Jst(String name, List<Argument> jvmArgs, List<Argument> args, Input input, List<Input> classpath, @Nullable List<Input> jstClasspath) {
+        public Jst(String name, List<Argument> args, Input input, List<Input> classpath, @Nullable List<Input> executionClasspath) {
             super(name);
             this.args.addAll(args);
-            this.jvmArgs.addAll(jvmArgs);
             this.input = input;
             this.classpath.addAll(classpath);
-            if (jstClasspath != null) {
-                this.jstClasspath.addAll(jstClasspath);
+            if (executionClasspath != null) {
+                this.executionClasspath.addAll(executionClasspath);
             }
         }
 
@@ -199,8 +199,7 @@ public sealed abstract class TaskModel {
             return Stream.of(
                 Stream.of(input, accessTransformers, interfaceInjection, parchmentData).filter(Objects::nonNull),
                 classpath.stream(),
-                jstClasspath.stream(),
-                jvmArgs.stream().flatMap(Argument::inputs),
+                executionClasspath.stream(),
                 args.stream().flatMap(Argument::inputs)
             ).flatMap(Function.identity());
         }
@@ -211,15 +210,14 @@ public sealed abstract class TaskModel {
                 var name = builder.field("name", task -> task.name, String.class);
                 var parallelism = builder.field("parallelism", task -> task.parallelism, String.class);
                 var args = builder.field("args", task -> task.args, TypeToken.getParameterized(List.class, Argument.class).getType());
-                var jvmArgs = builder.field("jvmArgs", task -> task.jvmArgs, TypeToken.getParameterized(List.class, Argument.class).getType());
                 var input = builder.field("input", task -> task.input, Input.class);
                 var classpath = builder.field("classpath", task -> task.classpath, TypeToken.getParameterized(List.class, Input.class).getType());
-                var jstClasspath = builder.field("jstClasspath", task -> task.jstClasspath, TypeToken.getParameterized(List.class, Input.class).getType());
+                var jstClasspath = builder.field("executionClasspath", task -> task.executionClasspath, TypeToken.getParameterized(List.class, Input.class).getType());
                 var accessTransformers = builder.field("accessTransformers", task -> task.accessTransformers, Input.class);
                 var interfaceInjection = builder.field("interfaceInjection", task -> task.interfaceInjection, Input.class);
                 var parchmentData = builder.field("parchmentData", task -> task.parchmentData, Input.class);
                 return values -> {
-                    var jst = new Jst(values.get(name), values.get(jvmArgs), values.get(args), values.get(input), values.get(classpath), values.get(jstClasspath));
+                    var jst = new Jst(values.get(name), values.get(args), values.get(input), values.get(classpath), values.get(jstClasspath));
                     jst.accessTransformers = values.get(accessTransformers);
                     jst.interfaceInjection = values.get(interfaceInjection);
                     jst.parchmentData = values.get(parchmentData);
@@ -266,6 +264,48 @@ public sealed abstract class TaskModel {
                 var classpath = builder.field("classpath", task -> task.classpath, TypeToken.getParameterized(List.class, Input.class).getType());
                 return values -> {
                     var task = new Compile(values.get(name), values.get(arguments), values.get(sources), values.get(sourcepath), values.get(classpath));
+                    task.parallelism = values.get(parallelism);
+                    return task;
+                };
+            }
+        }
+    }
+
+    @JsonAdapter(Adapter.class)
+    public static final class DaemonExecutedTool extends TaskModel {
+        public final List<Argument> args = new ArrayList<>();
+        public final List<Input> classpath = new ArrayList<>();
+        public @Nullable InputValue mainClass;
+
+        public DaemonExecutedTool(String name, List<Argument> args, List<Input> classpath, @Nullable InputValue mainClass) {
+            super(name);
+            this.args.addAll(args);
+            this.classpath.addAll(classpath);
+            this.mainClass = mainClass;
+        }
+
+        public DaemonExecutedTool(String name, List<Argument> args, Input jar) {
+            super(name);
+            this.args.addAll(args);
+            this.classpath.add(new Input.ListInput(List.of(jar)));
+            this.mainClass = null;
+        }
+
+        @Override
+        public Stream<Input> inputs() {
+            return Stream.concat(args.stream().flatMap(Argument::inputs), classpath.stream());
+        }
+
+        private static final class Specialized extends FieldAdapter<DaemonExecutedTool> {
+            @Override
+            public Function<Values, DaemonExecutedTool> build(Builder<DaemonExecutedTool> builder) {
+                var name = builder.field("name", task -> task.name, String.class);
+                var parallelism = builder.field("parallelism", task -> task.parallelism, String.class);
+                var args = builder.field("args", task -> task.args, TypeToken.getParameterized(List.class, Argument.class).getType());
+                var classpath = builder.field("classpath", task -> task.classpath, TypeToken.getParameterized(List.class, Input.class).getType());
+                var mainClass = builder.field("mainClass", task -> task.mainClass, InputValue.class);
+                return values -> {
+                    var task = new DaemonExecutedTool(values.get(name), values.get(args), values.get(classpath), values.get(mainClass));
                     task.parallelism = values.get(parallelism);
                     return task;
                 };

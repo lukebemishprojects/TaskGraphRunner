@@ -10,7 +10,6 @@ import java.io.InputStreamReader;
 import java.io.UncheckedIOException;
 import java.net.InetAddress;
 import java.net.Socket;
-import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -124,9 +123,7 @@ public class DaemonExecutor implements AutoCloseable {
             output.writeInt(id);
             output.writeInt(args.length);
             for (String arg : args) {
-                byte[] argBytes = arg.getBytes(StandardCharsets.UTF_8);
-                output.writeInt(argBytes.length);
-                output.write(argBytes);
+                output.writeUTF(arg);
             }
             output.flush();
             return out;
@@ -134,7 +131,7 @@ public class DaemonExecutor implements AutoCloseable {
 
         private volatile boolean closed = false;
 
-        private void beginClose(Throwable e) throws IOException {
+        private synchronized void beginClose(Throwable e) throws IOException {
             if (this.closed) return;
             this.closed = true;
             for (var future : results.values()) {

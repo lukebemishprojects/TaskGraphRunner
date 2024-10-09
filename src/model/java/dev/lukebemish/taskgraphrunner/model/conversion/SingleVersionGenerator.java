@@ -152,11 +152,9 @@ public final class SingleVersionGenerator {
                     new Input.TaskInput(new Output("extractServer", "output")),
                     null
                 ));
-                config.tasks.add(new TaskModel.Tool(
+                config.tasks.add(new TaskModel.DaemonExecutedTool(
                     "merge",
                     List.of(
-                        Argument.direct("-jar"),
-                        new Argument.FileInput(null, new Input.DirectInput(Value.tool("mergetool")), PathSensitivity.NONE),
                         Argument.direct("--client"),
                         new Argument.FileInput(null, new Input.TaskInput(new Output("stripClient", "output")), PathSensitivity.NONE),
                         Argument.direct("--server"),
@@ -167,7 +165,8 @@ public final class SingleVersionGenerator {
                         new Argument.FileOutput(null, "output", "jar"),
                         Argument.direct("--inject"),
                         Argument.direct("false")
-                    )
+                    ),
+                    new Input.DirectInput(Value.tool("mergetool"))
                 ));
                 config.tasks.add(new TaskModel.InjectSources(
                     "mergeResources",
@@ -185,11 +184,9 @@ public final class SingleVersionGenerator {
 
         // rename the merged jar
         config.tasks.add(new TaskModel.DownloadMappings("downloadClientMappings", new InputValue.DirectInput(new Value.StringValue("client")), new Input.TaskInput(new Output(downloadJsonName, "output"))));
-        config.tasks.add(new TaskModel.Tool(
+        config.tasks.add(new TaskModel.DaemonExecutedTool(
             "rename",
             List.of(
-                Argument.direct("-jar"),
-                new Argument.FileInput(null, new Input.DirectInput(Value.tool("autorenamingtool")), PathSensitivity.NONE),
                 Argument.direct("--input"),
                 new Argument.FileInput(null, new Input.TaskInput(merged), PathSensitivity.NONE),
                 Argument.direct("--output"),
@@ -204,7 +201,8 @@ public final class SingleVersionGenerator {
                 Argument.direct("--record-fix"),
                 Argument.direct("--unfinal-params"),
                 Argument.direct("--reverse")
-            )
+            ),
+            new Input.DirectInput(Value.tool("autorenamingtool"))
         ));
 
         Output binariesTask = new Output("rename", "output");
@@ -228,17 +226,16 @@ public final class SingleVersionGenerator {
         }
 
         if (options.accessTransformersParameter != null) {
-            config.tasks.add(new TaskModel.Tool(
+            config.tasks.add(new TaskModel.DaemonExecutedTool(
                 "accessTransformers",
                 List.of(
-                    Argument.direct("-jar"),
-                    new Argument.FileInput(null, new Input.DirectInput(Value.tool("accesstransformers")), PathSensitivity.NONE),
                     Argument.direct("--inJar"),
                     new Argument.FileInput(null, new Input.TaskInput(binariesTask), PathSensitivity.NONE),
                     Argument.direct("--outJar"),
                     new Argument.FileOutput(null, "output", "jar"),
                     new Argument.Zip("--atFile={}", List.of(new Input.ParameterInput(options.accessTransformersParameter)), PathSensitivity.NONE)
-                )
+                ),
+                new Input.DirectInput(Value.tool("accesstransformers"))
             ));
             binariesTask = new Output("accessTransformers", "output");
         }
@@ -281,7 +278,6 @@ public final class SingleVersionGenerator {
         if (useJst) {
             var jst = new TaskModel.Jst(
                 "jstTransform",
-                List.of(),
                 List.of(
                     new Argument.ValueInput(null, new InputValue.DirectInput(new Value.StringValue("--enable-linemapper"))),
                     new Argument.FileOutput("--line-map-out={}", "linemap", "txt")
@@ -301,16 +297,15 @@ public final class SingleVersionGenerator {
 
         config.aliases.put("binarySourceIndependent", binariesTask);
 
-        var fixLineNumbers = new TaskModel.Tool(
+        var fixLineNumbers = new TaskModel.DaemonExecutedTool(
             "fixLineNumbers",
             List.of(
-                new Argument.ValueInput(null, new InputValue.DirectInput(new Value.StringValue("-jar"))),
-                new Argument.FileInput(null, new Input.DirectInput(Value.tool("linemapper")), PathSensitivity.NONE),
                 new Argument.ValueInput(null, new InputValue.DirectInput(new Value.StringValue("--input"))),
                 new Argument.FileInput(null, new Input.TaskInput(binariesTask), PathSensitivity.NONE),
                 new Argument.ValueInput(null, new InputValue.DirectInput(new Value.StringValue("--output"))),
                 new Argument.FileOutput(null, "output", "jar")
-            )
+            ),
+            new Input.DirectInput(Value.tool("linemapper"))
         );
 
         fixLineNumbers.args.add(new Argument.FileInput("--vineflower={}", new Input.TaskInput(new Output("decompile", "output")), PathSensitivity.NONE));
