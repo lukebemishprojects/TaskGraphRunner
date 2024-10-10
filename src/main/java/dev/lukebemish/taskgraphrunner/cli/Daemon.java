@@ -7,7 +7,6 @@ import java.io.DataOutputStream;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.net.ServerSocket;
-import java.nio.charset.StandardCharsets;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
@@ -72,7 +71,7 @@ public class Daemon implements AutoCloseable, Runnable {
             String[] args = new String[main.args.length - 1 + input.readInt()];
             System.arraycopy(main.args, 0, args, 0, main.args.length - 1);
             for (int i = 0; i < args.length; i++) {
-                args[i + main.args.length-1] = new String(input.readNBytes(input.readInt()), StandardCharsets.UTF_8);
+                args[i + main.args.length-1] = input.readUTF();
             }
             executor.submit(() -> {
                 Main.execute(() -> {
