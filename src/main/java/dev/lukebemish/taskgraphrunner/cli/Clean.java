@@ -1,6 +1,7 @@
 package dev.lukebemish.taskgraphrunner.cli;
 
 import com.google.gson.JsonObject;
+import dev.lukebemish.taskgraphrunner.runtime.util.HashUtils;
 import dev.lukebemish.taskgraphrunner.runtime.util.JsonUtils;
 import dev.lukebemish.taskgraphrunner.runtime.util.LockManager;
 import org.slf4j.Logger;
@@ -83,25 +84,61 @@ public class Clean implements Runnable {
 
         for (var transformDir : matchingDirectories) {
             try (var stream = Files.list(transformDir)) {
-                stream.forEach(path -> {
-                    if (path.endsWith(".jar.marker")) {
-                        try {
-                            BasicFileAttributes attributes = Files.readAttributes(path, BasicFileAttributes.class);
-                            if (attributes.isRegularFile() && attributes.lastAccessTime().compareTo(outdated) < 0) {
-                                var original = path.resolveSibling(path.getFileName().toString().substring(0, path.getFileName().toString().length() - ".marker".length()));
-                                try (var ignored = lockManager.lock(transformDir.getFileName() + "." + path.getFileName().toString().substring(0, path.getFileName().toString().length() - ".jar.marker".length()))) {
-                                    attributes = Files.readAttributes(path, BasicFileAttributes.class);
-                                    if (attributes.isRegularFile() && attributes.lastAccessTime().compareTo(outdated) < 0) {
-                                        Files.delete(original);
-                                        Files.delete(path);
+                stream.forEach(fileName -> {
+                    if (Files.isDirectory(fileName)) {
+                        try (var innerStream = Files.list(fileName)) {
+                            innerStream.forEach(path -> {
+                                if (path.endsWith(".jar.marker")) {
+                                    try {
+                                        BasicFileAttributes attributes = Files.readAttributes(path, BasicFileAttributes.class);
+                                        if (attributes.isRegularFile() && attributes.lastAccessTime().compareTo(outdated) < 0) {
+                                            var markerName = path.getFileName().toString();
+                                            var nameHash = HashUtils.hash(fileName.getFileName().toString());
+                                            var original = fileName.resolveSibling(markerName.substring(0, markerName.length() - ".marker".length()));
+                                            try (var ignored = lockManager.lock(transformDir.getFileName() + "." + nameHash + "." + markerName.substring(0, markerName.length() - ".jar.marker".length()))) {
+                                                attributes = Files.readAttributes(path, BasicFileAttributes.class);
+                                                if (attributes.isRegularFile() && attributes.lastAccessTime().compareTo(outdated) < 0) {
+                                                    Files.delete(original);
+                                                    Files.delete(path);
+                                                }
+                                            }
+                                        }
+                                    } catch (IOException e) {
+                                        LOGGER.error("Issue deleting transform {}", fileName, e);
                                     }
                                 }
-                            }
+                            });
                         } catch (IOException e) {
-                            LOGGER.error("Issue deleting transform {}", path, e);
+                            LOGGER.error("Issue listing transform files in {}", fileName, e);
+                        }
+                        boolean empty = false;
+                        try (var innerStream = Files.list(fileName)) {
+                            empty = innerStream.findFirst().isEmpty();
+                        } catch (IOException e) {
+                            LOGGER.error("Issue deleting empty transform directories", e);
+                        }
+                        if (empty) {
+                            try {
+                                Files.delete(fileName);
+                            } catch (IOException e) {
+                                LOGGER.error("Issue deleting empty transform directory {}", fileName, e);
+                            }
                         }
                     }
                 });
+                boolean empty = false;
+                try (var innerStream = Files.list(transformDir)) {
+                    empty = innerStream.findFirst().isEmpty();
+                } catch (IOException e) {
+                    LOGGER.error("Issue deleting empty transform directories", e);
+                }
+                if (empty) {
+                    try {
+                        Files.delete(transformDir);
+                    } catch (IOException e) {
+                        LOGGER.error("Issue deleting empty transform directory {}", transformDir, e);
+                    }
+                }
             } catch (IOException e) {
                 LOGGER.error("Issue listing transform files in {}", transformDir, e);
             }

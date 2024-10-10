@@ -334,9 +334,8 @@ public class DaemonExecutor implements AutoCloseable {
     private static Path transform(Path jar, Context context) throws IOException {
         var now = FileTime.from(Instant.now());
         var fileHash = HashUtils.hash(jar);
-        var nameHash = HashUtils.hash(jar.getFileName().toString());
-        var outJarPath = context.transformCachePath(TRANSFORM_VERSION).resolve(nameHash).resolve(fileHash + ".jar");
-        var outJarMarker = context.transformCachePath(TRANSFORM_VERSION).resolve(nameHash).resolve(fileHash + ".jar.marker");
+        var outJarPath = context.transformCachePath(TRANSFORM_VERSION).resolve(jar.getFileName().toString()).resolve(fileHash + ".jar");
+        var outJarMarker = context.transformCachePath(TRANSFORM_VERSION).resolve(jar.getFileName().toString()).resolve(fileHash + ".jar.marker");
         Files.createDirectories(outJarPath.getParent());
         if (Files.exists(outJarMarker)) {
             FileUtils.setLastAccessedTime(outJarMarker, now);
@@ -344,6 +343,7 @@ public class DaemonExecutor implements AutoCloseable {
                 return outJarPath;
             }
         }
+        var nameHash = HashUtils.hash(jar.getFileName().toString());
         try (var ignored = context.lockManager().lock("transform."+TRANSFORM_VERSION+"."+nameHash+"."+fileHash);
              var out = Files.newOutputStream(outJarPath);
              var in = Files.newInputStream(jar);
