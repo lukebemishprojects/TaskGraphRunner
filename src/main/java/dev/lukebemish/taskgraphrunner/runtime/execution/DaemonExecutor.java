@@ -277,7 +277,14 @@ public class DaemonExecutor implements AutoCloseable {
                 }
             }).get();
         } catch (IOException | ExecutionException | InterruptedException e) {
+            logError(logFile);
             throw new RuntimeException(e);
+        }
+    }
+
+    private static void logError(Path logFile) {
+        if (Files.exists(logFile)) {
+            LOGGER.error("Process failed; see log file at {}", logFile.toAbsolutePath());
         }
     }
 
@@ -294,6 +301,7 @@ public class DaemonExecutor implements AutoCloseable {
                 }
             }).get();
         } catch (IOException | ExecutionException | InterruptedException e) {
+            logError(logFile);
             throw new RuntimeException(e);
         }
     }
