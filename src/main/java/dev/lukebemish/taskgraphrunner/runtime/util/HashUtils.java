@@ -4,10 +4,12 @@ import dev.lukebemish.taskgraphrunner.runtime.RecordedInput;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.FileTime;
+import java.security.DigestOutputStream;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.HexFormat;
@@ -20,7 +22,7 @@ public final class HashUtils {
     private HashUtils() {}
 
     private static final Queue<Path> cachedHashPaths = new ConcurrentLinkedDeque<>();
-    private static final int pathsToCache = 256;
+    private static final int pathsToCache = 1024;
     private static final Map<Path, CacheResult> cachedHashes = new ConcurrentHashMap<>();
 
     private record CacheResult(byte[] result, FileTime lastModified) {}
@@ -52,11 +54,7 @@ public final class HashUtils {
 
         try (var is = Files.newInputStream(path)) {
             MessageDigest digest = MessageDigest.getInstance(algorithm);
-            byte[] buffer = new byte[2048];
-            int read;
-            while ((read = is.read(buffer)) != -1) {
-                digest.update(buffer, 0, read);
-            }
+            is.transferTo(new DigestOutputStream(OutputStream.nullOutputStream(), digest));
             var hash = digest.digest();
             var lastModified = Files.getLastModifiedTime(path);
             cachedHashes.put(path, new CacheResult(hash, lastModified));
