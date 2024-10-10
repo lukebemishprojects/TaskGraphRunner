@@ -82,6 +82,7 @@ public class Clean implements Runnable {
             LOGGER.error("Issue listing transform directories", e);
         }
 
+        var deletedOutputs = new AtomicInteger();
         for (var transformDir : matchingDirectories) {
             try (var stream = Files.list(transformDir)) {
                 stream.forEach(fileName -> {
@@ -100,6 +101,7 @@ public class Clean implements Runnable {
                                                 if (attributes.isRegularFile() && attributes.lastAccessTime().compareTo(outdated) < 0) {
                                                     Files.delete(original);
                                                     Files.delete(path);
+                                                    deletedOutputs.incrementAndGet();
                                                 }
                                             }
                                         }
@@ -142,6 +144,9 @@ public class Clean implements Runnable {
             } catch (IOException e) {
                 LOGGER.error("Issue listing transform files in {}", transformDir, e);
             }
+        }
+        if (deletedOutputs.get() > 0) {
+            LOGGER.info("Deleted {} outdated transform files", deletedOutputs.get());
         }
     }
 
