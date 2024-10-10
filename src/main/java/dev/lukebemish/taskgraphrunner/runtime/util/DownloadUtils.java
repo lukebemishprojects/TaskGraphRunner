@@ -20,13 +20,13 @@ public final class DownloadUtils {
 
     public static boolean download(Spec spec, Path target) throws IOException {
         var uri = spec.uri();
-        LOGGER.info("Downloading "+uri+" -> "+target.toAbsolutePath());
+        LOGGER.debug("Downloading "+uri+" -> "+target.toAbsolutePath());
         var checksum = spec.checksum();
         var checksumAlgorithm = spec.checksumAlgorithm();
         if (checksum != null && checksumAlgorithm != null && Files.exists(target)) {
             var existingHash = HashUtils.hash(target, checksumAlgorithm);
             if (checksum.equalsIgnoreCase(existingHash)) {
-                LOGGER.info("Checksum for "+target+" matches, skipping download");
+                LOGGER.debug("Checksum for "+target+" matches, skipping download");
                 return false;
             }
         }
@@ -47,7 +47,7 @@ public final class DownloadUtils {
         connection.connect();
 
         if (connection.getResponseCode() == HttpURLConnection.HTTP_NOT_MODIFIED) {
-            LOGGER.info("File not modified, skipping download");
+            LOGGER.debug("File not modified, skipping download");
             return false;
         }
 

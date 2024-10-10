@@ -283,13 +283,13 @@ public abstract class Task implements RecordedInput {
                         JsonElement newInputState = recordedValue(context);
                         if (newInputState.equals(existingInputState)) {
                             executed.set(true);
-                            LOGGER.info("Task `" + name + "` is up-to-date.");
+                            LOGGER.debug("Task `" + name + "` is up-to-date.");
                             return;
                         }
                     }
                 } catch (Exception e) {
                     // something went wrong -- let's log it, then keep going:
-                    LOGGER.info("Up-to-date check for task `" + name + "` failed", e);
+                    LOGGER.warn("Up-to-date check for task `" + name + "` failed", e);
                 }
             }
             outputId++;
