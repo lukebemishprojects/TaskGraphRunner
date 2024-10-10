@@ -301,6 +301,14 @@ public class DaemonExecutor implements AutoCloseable {
     private static final Logger LOGGER = LoggerFactory.getLogger(DaemonExecutor.class);
     private static DaemonExecutor INSTANCE;
 
+    static {
+        Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+            if (INSTANCE != null) {
+                INSTANCE.close();
+            }
+        }));
+    }
+
     private static synchronized DaemonExecutor getInstance() {
         if (INSTANCE == null) {
             try {
