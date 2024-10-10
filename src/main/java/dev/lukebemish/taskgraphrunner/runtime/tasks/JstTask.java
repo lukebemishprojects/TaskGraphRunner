@@ -142,6 +142,7 @@ public class JstTask extends Task {
             writer.append("-".repeat(80)).append("\n\n");
             writer.append("Command-Line:\n");
             writer.append(" -cp ").append(classpath.stream().map(p -> p.toAbsolutePath().toString()).collect(Collectors.joining(File.pathSeparator))).append("\n");
+            writer.append(" - ").append(mainClass).append("\n");
             for (String s : command) {
                 writer.append(" - ").append(s).append("\n");
             }

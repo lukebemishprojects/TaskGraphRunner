@@ -106,6 +106,7 @@ public class DaemonExecutedToolTask extends Task {
                     writer.append("-".repeat(80)).append("\n\n");
                     writer.append("Command-Line:\n");
                     writer.append(" - -cp\n - ").append(classpath.stream().map(p -> p.toAbsolutePath().toString()).collect(Collectors.joining(File.pathSeparator))).append("\n");
+                    writer.append(" - ").append(mainClass.value().toString()).append("\n");
                     for (String s : args) {
                         writer.append(" - ").append(s).append("\n");
                     }
