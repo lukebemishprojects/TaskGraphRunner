@@ -36,8 +36,8 @@ public class Mark implements Runnable {
     public void run() {
         try {
             var lockManager = new LockManager(main.cacheDir.resolve("locks"));
+            var now = FileTime.from(Instant.now());
             for (var taskRecordJson : taskRecordJsons) {
-                var now = FileTime.from(Instant.now());
                 try (var reader = Files.newBufferedReader(taskRecordJson)) {
                     Map<String, SingleTask> tasks = JsonUtils.GSON.fromJson(reader, TypeToken.getParameterized(Map.class, String.class, SingleTask.class).getType());
                     for (var entry : tasks.entrySet()) {
@@ -52,7 +52,9 @@ public class Mark implements Runnable {
                                     FileUtils.setLastAccessedTime(outputPath, now);
                                 }
                             }
-                            FileUtils.setLastAccessedTime(state, now);
+                            if (Files.exists(state)) {
+                                FileUtils.setLastAccessedTime(state, now);
+                            }
                         }
                     }
                 }

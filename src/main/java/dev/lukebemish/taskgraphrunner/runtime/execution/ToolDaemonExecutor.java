@@ -22,6 +22,7 @@ import java.io.InputStreamReader;
 import java.io.UncheckedIOException;
 import java.net.InetAddress;
 import java.net.Socket;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.FileTime;
@@ -50,6 +51,10 @@ public class ToolDaemonExecutor implements AutoCloseable {
     private final ResultListener listener;
 
     private ToolDaemonExecutor() throws IOException {
+        this(new Path[0]);
+    }
+
+    private ToolDaemonExecutor(Path[] classpath) throws IOException {
         var workingDirectory = Files.createTempDirectory("taskgraphrunner");
         var tempFile = workingDirectory.resolve("execution-daemon.jar");
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {
@@ -68,7 +73,17 @@ public class ToolDaemonExecutor implements AutoCloseable {
             .info()
             .command()
             .orElseThrow();
-        builder.command(javaExecutablePath, "-jar", tempFile.toAbsolutePath().toString());
+        List<String> fullClasspath = new ArrayList<>();
+        fullClasspath.add(tempFile.toAbsolutePath().toString());
+        for (Path path : classpath) {
+            fullClasspath.add(path.toAbsolutePath().toString());
+        }
+        var classpathFile = workingDirectory.resolve("classpath.txt");
+        try (var writer = Files.newBufferedWriter(classpathFile, StandardCharsets.UTF_8)) {
+            writer.write(String.join(File.pathSeparator, fullClasspath));
+            writer.newLine();
+        }
+        builder.command(javaExecutablePath, "-cp", "@"+ classpathFile.toAbsolutePath(), "dev.lukebemish.taskgraphrunner.execution.Daemon");
         builder.redirectOutput(ProcessBuilder.Redirect.PIPE);
         builder.redirectError(ProcessBuilder.Redirect.PIPE);
         builder.redirectInput(ProcessBuilder.Redirect.PIPE);
@@ -307,7 +322,7 @@ public class ToolDaemonExecutor implements AutoCloseable {
         var key = String.join(File.pathSeparator, Arrays.stream(classpath).map(it -> it.toAbsolutePath().toString()).toArray(CharSequence[]::new));
         return CLASSPATH_INSTANCES.computeIfAbsent(key, k -> {
             try {
-                return new ToolDaemonExecutor();
+                return new ToolDaemonExecutor(classpath);
             } catch (IOException e) {
                 throw new RuntimeException(e);
             }
