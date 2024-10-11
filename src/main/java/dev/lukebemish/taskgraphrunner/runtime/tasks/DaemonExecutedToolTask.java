@@ -7,7 +7,7 @@ import dev.lukebemish.taskgraphrunner.model.WorkItem;
 import dev.lukebemish.taskgraphrunner.runtime.Context;
 import dev.lukebemish.taskgraphrunner.runtime.Task;
 import dev.lukebemish.taskgraphrunner.runtime.TaskInput;
-import dev.lukebemish.taskgraphrunner.runtime.execution.DaemonExecutor;
+import dev.lukebemish.taskgraphrunner.runtime.execution.ToolDaemonExecutor;
 import org.jspecify.annotations.Nullable;
 
 import java.io.File;
@@ -27,6 +27,7 @@ public class DaemonExecutedToolTask extends Task {
     private final TaskInput.FileListInput classpath;
     private final TaskInput.@Nullable ValueInput mainClass;
     private final Map<String, String> outputExtensions;
+    private final boolean classpathScopedJvm;
 
     public DaemonExecutedToolTask(TaskModel.DaemonExecutedTool model, WorkItem workItem, Context context) {
         super(model);
@@ -55,6 +56,8 @@ public class DaemonExecutedToolTask extends Task {
             this.inputs.add(this.mainClass);
         }
         this.inputs.addAll(args.stream().flatMap(ArgumentProcessor.Arg::inputs).toList());
+
+        this.classpathScopedJvm = model.classpathScopedJvm;
     }
 
     @Override
@@ -100,7 +103,7 @@ public class DaemonExecutedToolTask extends Task {
                     }
                     writer.append("-".repeat(80)).append("\n\n");
                 }
-                DaemonExecutor.execute(classpath.getFirst(), logFile, args.toArray(String[]::new), context);
+                ToolDaemonExecutor.execute(classpath.getFirst(), logFile, args.toArray(String[]::new), context, classpathScopedJvm);
             } else {
                 try (var writer = Files.newBufferedWriter(logFile, StandardCharsets.UTF_8)) {
                     writer.append("-".repeat(80)).append("\n\n");
@@ -115,7 +118,7 @@ public class DaemonExecutedToolTask extends Task {
                 if (!(mainClass.value() instanceof Value.StringValue mainClassValue)) {
                     throw new IllegalArgumentException("mainClass must be a string");
                 }
-                DaemonExecutor.execute(classpath, mainClassValue.value(), logFile, args.toArray(String[]::new), context);
+                ToolDaemonExecutor.execute(classpath, mainClassValue.value(), logFile, args.toArray(String[]::new), context, classpathScopedJvm);
             }
         } catch (IOException e) {
             throw new UncheckedIOException(e);

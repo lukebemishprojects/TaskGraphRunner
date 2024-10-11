@@ -27,6 +27,7 @@ import java.nio.file.Path;
 import java.nio.file.attribute.FileTime;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
@@ -43,12 +44,12 @@ import java.util.jar.JarOutputStream;
 import java.util.stream.Collectors;
 import java.util.zip.ZipEntry;
 
-public class DaemonExecutor implements AutoCloseable {
+public class ToolDaemonExecutor implements AutoCloseable {
     private final Process process;
     private final Socket socket;
     private final ResultListener listener;
 
-    private DaemonExecutor() throws IOException {
+    private ToolDaemonExecutor() throws IOException {
         var workingDirectory = Files.createTempDirectory("taskgraphrunner");
         var tempFile = workingDirectory.resolve("execution-daemon.jar");
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {
@@ -58,7 +59,7 @@ public class DaemonExecutor implements AutoCloseable {
                 throw new UncheckedIOException(e);
             }
         }));
-        try (var stream = DaemonExecutor.class.getResourceAsStream("/execution-daemon.jar")) {
+        try (var stream = ToolDaemonExecutor.class.getResourceAsStream("/execution-daemon.jar")) {
             Files.copy(Objects.requireNonNull(stream, "Could not find bundled tool execution daemon"), tempFile);
         }
 
@@ -267,7 +268,6 @@ public class DaemonExecutor implements AutoCloseable {
         var nextId = id.getAndIncrement();
         try {
             listener.submit(nextId, output -> {
-                output.writeInt(0);
                 output.writeUTF(classpath);
                 output.writeUTF(mainClass);
                 output.writeUTF(logFile.toAbsolutePath().toString());
@@ -288,39 +288,36 @@ public class DaemonExecutor implements AutoCloseable {
         }
     }
 
-    private void execute(Path jar, Path logFile, String[] args) {
-        var nextId = id.getAndIncrement();
-        try {
-            listener.submit(nextId, output -> {
-                output.writeInt(1);
-                output.writeUTF(jar.toAbsolutePath().toString());
-                output.writeUTF(logFile.toAbsolutePath().toString());
-                output.writeInt(args.length);
-                for (String arg : args) {
-                    output.writeUTF(arg);
-                }
-            }).get();
-        } catch (IOException | ExecutionException | InterruptedException e) {
-            logError(logFile);
-            throw new RuntimeException(e);
-        }
-    }
-
-    private static final Logger LOGGER = LoggerFactory.getLogger(DaemonExecutor.class);
-    private static DaemonExecutor INSTANCE;
+    private static final Logger LOGGER = LoggerFactory.getLogger(ToolDaemonExecutor.class);
+    private static ToolDaemonExecutor INSTANCE;
+    private static final Map<String, ToolDaemonExecutor> CLASSPATH_INSTANCES = new ConcurrentHashMap<>();
 
     static {
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {
             if (INSTANCE != null) {
                 INSTANCE.close();
+                INSTANCE = null;
             }
+            CLASSPATH_INSTANCES.values().forEach(ToolDaemonExecutor::close);
+            CLASSPATH_INSTANCES.clear();
         }));
     }
 
-    private static synchronized DaemonExecutor getInstance() {
+    private static synchronized ToolDaemonExecutor getInstance(Path[] classpath) {
+        var key = String.join(File.pathSeparator, Arrays.stream(classpath).map(it -> it.toAbsolutePath().toString()).toArray(CharSequence[]::new));
+        return CLASSPATH_INSTANCES.computeIfAbsent(key, k -> {
+            try {
+                return new ToolDaemonExecutor();
+            } catch (IOException e) {
+                throw new RuntimeException(e);
+            }
+        });
+    }
+
+    private static synchronized ToolDaemonExecutor getInstance() {
         if (INSTANCE == null) {
             try {
-                INSTANCE = new DaemonExecutor();
+                INSTANCE = new ToolDaemonExecutor();
             } catch (IOException e) {
                 throw new RuntimeException(e);
             }
@@ -329,7 +326,7 @@ public class DaemonExecutor implements AutoCloseable {
             LOGGER.warn("Tool execution daemon has died; starting a new one");
             INSTANCE.close();
             try {
-                INSTANCE = new DaemonExecutor();
+                INSTANCE = new ToolDaemonExecutor();
             } catch (IOException e) {
                 throw new RuntimeException(e);
             }
@@ -442,24 +439,35 @@ public class DaemonExecutor implements AutoCloseable {
         return outJarPath;
     }
 
-    public static void execute(Path jar, Path logFile, String[] args, Context context) {
+    public static void execute(Path jar, Path logFile, String[] args, Context context, boolean classpathScoped) {
         Path transformedJar;
         try {
             transformedJar = transform(jar, context);
         } catch (IOException e) {
             throw new UncheckedIOException(e);
         }
-        getInstance().execute(transformedJar, logFile, args);
+        String mainClass;
+        try (var jarFile = new JarInputStream(Files.newInputStream(transformedJar))) {
+            var manifest = jarFile.getManifest();
+            mainClass = manifest.getMainAttributes().getValue("Main-Class");
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
+        if (mainClass == null) {
+            throw new RuntimeException("No Main-Class attribute in manifest");
+        }
+        execute(List.of(transformedJar), mainClass, logFile, args, context, classpathScoped);
     }
 
-    public static void execute(Collection<Path> classpath, String mainClass, Path logFile, String[] args, Context context) {
+    public static void execute(Collection<Path> classpath, String mainClass, Path logFile, String[] args, Context context, boolean classpathScoped) {
         var transformedClasspath = classpath.stream().map(p -> {
             try {
                 return transform(p.toAbsolutePath(), context).toAbsolutePath();
             } catch (IOException e) {
                 throw new UncheckedIOException(e);
             }
-        }).map(Path::toString).collect(Collectors.joining(File.pathSeparator));
-        getInstance().execute(transformedClasspath, mainClass, logFile, args);
+        }).toArray(Path[]::new);
+        var transformedClasspathString = Arrays.stream(transformedClasspath).map(Path::toString).collect(Collectors.joining(File.pathSeparator));
+        (classpathScoped ? getInstance(transformedClasspath) : getInstance()).execute(classpathScoped ? "" : transformedClasspathString, mainClass, logFile, args);
     }
 }

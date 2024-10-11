@@ -183,6 +183,7 @@ public sealed abstract class TaskModel {
         public @Nullable Input accessTransformers = null;
         public @Nullable Input interfaceInjection = null;
         public @Nullable Input parchmentData = null;
+        public boolean classpathScopedJvm = false;
 
         public Jst(String name, List<Argument> args, Input input, List<Input> classpath, @Nullable List<Input> executionClasspath) {
             super(name);
@@ -216,12 +217,14 @@ public sealed abstract class TaskModel {
                 var accessTransformers = builder.field("accessTransformers", task -> task.accessTransformers, Input.class);
                 var interfaceInjection = builder.field("interfaceInjection", task -> task.interfaceInjection, Input.class);
                 var parchmentData = builder.field("parchmentData", task -> task.parchmentData, Input.class);
+                var classpathScopedJvm = builder.field("classpathScopedJvm", task -> task.classpathScopedJvm, Boolean.class);
                 return values -> {
                     var jst = new Jst(values.get(name), values.get(args), values.get(input), values.get(classpath), values.get(jstClasspath));
                     jst.accessTransformers = values.get(accessTransformers);
                     jst.interfaceInjection = values.get(interfaceInjection);
                     jst.parchmentData = values.get(parchmentData);
                     jst.parallelism = values.get(parallelism);
+                    jst.classpathScopedJvm = values.get(classpathScopedJvm) == Boolean.TRUE;
                     return jst;
                 };
             }
@@ -276,6 +279,7 @@ public sealed abstract class TaskModel {
         public final List<Argument> args = new ArrayList<>();
         public final List<Input> classpath = new ArrayList<>();
         public @Nullable InputValue mainClass;
+        public boolean classpathScopedJvm = false;
 
         public DaemonExecutedTool(String name, List<Argument> args, List<Input> classpath, @Nullable InputValue mainClass) {
             super(name);
@@ -304,9 +308,11 @@ public sealed abstract class TaskModel {
                 var args = builder.field("args", task -> task.args, TypeToken.getParameterized(List.class, Argument.class).getType());
                 var classpath = builder.field("classpath", task -> task.classpath, TypeToken.getParameterized(List.class, Input.class).getType());
                 var mainClass = builder.field("mainClass", task -> task.mainClass, InputValue.class);
+                var classpathScopedJvm = builder.field("classpathScopedJvm", task -> task.classpathScopedJvm, Boolean.class);
                 return values -> {
                     var task = new DaemonExecutedTool(values.get(name), values.get(args), values.get(classpath), values.get(mainClass));
                     task.parallelism = values.get(parallelism);
+                    task.classpathScopedJvm = values.get(classpathScopedJvm) == Boolean.TRUE;
                     return task;
                 };
             }

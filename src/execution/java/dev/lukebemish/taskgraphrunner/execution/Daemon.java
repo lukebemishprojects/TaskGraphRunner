@@ -2,6 +2,7 @@ package dev.lukebemish.taskgraphrunner.execution;
 
 import java.io.DataInputStream;
 import java.io.DataOutputStream;
+import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
@@ -13,10 +14,10 @@ import java.net.ServerSocket;
 import java.net.URL;
 import java.net.URLClassLoader;
 import java.nio.file.Paths;
+import java.util.Arrays;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.function.Supplier;
-import java.util.jar.JarFile;
 
 public class Daemon implements AutoCloseable {
     private final ServerSocket socket;
@@ -55,54 +56,27 @@ public class Daemon implements AutoCloseable {
             if (id == -1) {
                 break;
             }
-            int mode = input.readInt();
-            switch (mode) {
-                case 0 -> {
-                    // Launch with classpath
-                    String classpath = input.readUTF();
-                    String mainClass = input.readUTF();
-                    String logFile = input.readUTF();
-                    String[] args = new String[input.readInt()];
-                    for (int i = 0; i < args.length; i++) {
-                        args[i] = input.readUTF();
-                    }
-                    executor.submit(() -> {
-                        int result = 0;
-                        try {
-                            result = launch(classpath, mainClass, args, logFile);
-                        } catch (Throwable t) {
-                            result = 1;
-                        }
-                        try {
-                            output.write(id, result);
-                        } catch (IOException e) {
-                            throw new RuntimeException(e);
-                        }
-                    });
-                }
-                case 1 -> {
-                    // Launch with jar
-                    String jar = input.readUTF();
-                    String logFile = input.readUTF();
-                    String[] args = new String[input.readInt()];
-                    for (int i = 0; i < args.length; i++) {
-                        args[i] = input.readUTF();
-                    }
-                    executor.submit(() -> {
-                        int result = 0;
-                        try {
-                            result = launch(jar, args, logFile);
-                        } catch (Throwable t) {
-                            result = 1;
-                        }
-                        try {
-                            output.write(id, result);
-                        } catch (IOException e) {
-                            throw new RuntimeException(e);
-                        }
-                    });
-                }
+            // Launch with classpath
+            String classpath = input.readUTF();
+            String mainClass = input.readUTF();
+            String logFile = input.readUTF();
+            String[] args = new String[input.readInt()];
+            for (int i = 0; i < args.length; i++) {
+                args[i] = input.readUTF();
             }
+            executor.submit(() -> {
+                int result;
+                try {
+                    result = launch(classpath, mainClass, args, logFile);
+                } catch (Throwable t) {
+                    result = 1;
+                }
+                try {
+                    output.write(id, result);
+                } catch (IOException e) {
+                    throw new RuntimeException(e);
+                }
+            });
         }
     }
 
@@ -129,13 +103,17 @@ public class Daemon implements AutoCloseable {
                 var urls = target.urls();
                 var mainClass = target.mainClass();
                 var exitScopedClassLoader = new ExitScope();
-                try (var urlClassLoader = new URLClassLoader(urls, Daemon.class.getClassLoader())) {
+                try (var urlClassLoader = (urls.length != 0) ? new URLClassLoader(urls, Daemon.class.getClassLoader()) : null) {
                     SystemStreams.OUT.set(printStream);
                     SystemStreams.ERR.set(printStream);
                     ExitScope.SCOPE.set(exitScopedClassLoader);
-                    Thread.currentThread().setContextClassLoader(urlClassLoader);
+                    if (urls.length == 0) {
+                        Thread.currentThread().setContextClassLoader(Daemon.class.getClassLoader());
+                    } else {
+                        Thread.currentThread().setContextClassLoader(urlClassLoader);
+                    }
                     try {
-                        var main = Class.forName(mainClass, false, urlClassLoader);
+                        var main = Class.forName(mainClass, false, urlClassLoader == null ? Daemon.class.getClassLoader() : urlClassLoader);
                         var method = main.getMethod("main", String[].class);
                         method.invoke(null, (Object) args);
                     } catch (Throwable t) {
@@ -152,7 +130,7 @@ public class Daemon implements AutoCloseable {
                             return 1;
                         }
                     } finally {
-                        Thread.currentThread().setContextClassLoader(null);
+                        Thread.currentThread().setContextClassLoader(Daemon.class.getClassLoader());
                     }
                 }
             } catch (Throwable t) {
@@ -168,37 +146,16 @@ public class Daemon implements AutoCloseable {
 
     private static int launch(String classpath, String mainClass, String[] args, String logFile) {
         return execute(args, () -> {
-            var urlStrings = classpath.split(":");
-            var urls = new URL[urlStrings.length];
-            for (int i = 0; i < urlStrings.length; i++) {
+            var urlStrings = Arrays.stream(classpath.split(File.pathSeparator)).filter(s -> !s.isBlank()).toList();
+            var urls = new URL[urlStrings.size()];
+            for (int i = 0; i < urlStrings.size(); i++) {
                 try {
-                    urls[i] = Paths.get(urlStrings[i]).toUri().toURL();
+                    urls[i] = Paths.get(urlStrings.get(i)).toUri().toURL();
                 } catch (MalformedURLException e) {
                     throw new RuntimeException(e);
                 }
             }
             return new Target(urls, mainClass);
-        }, logFile);
-    }
-
-    private static int launch(String jar, String[] args, String logFile) {
-        return execute(args, () -> {
-            try {
-                var url = Paths.get(jar).toUri().toURL();
-                String mainClass;
-                try (var jarFile = new JarFile(url.getFile())) {
-                    var manifest = jarFile.getManifest();
-                    mainClass = manifest.getMainAttributes().getValue("Main-Class");
-                } catch (IOException e) {
-                    throw new RuntimeException(e);
-                }
-                if (mainClass == null) {
-                    throw new RuntimeException("No Main-Class attribute in manifest");
-                }
-                return new Target(new URL[]{url}, mainClass);
-            } catch (MalformedURLException e) {
-                throw new RuntimeException(e);
-            }
         }, logFile);
     }
 }

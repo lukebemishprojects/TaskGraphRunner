@@ -6,7 +6,7 @@ import dev.lukebemish.taskgraphrunner.model.WorkItem;
 import dev.lukebemish.taskgraphrunner.runtime.Context;
 import dev.lukebemish.taskgraphrunner.runtime.Task;
 import dev.lukebemish.taskgraphrunner.runtime.TaskInput;
-import dev.lukebemish.taskgraphrunner.runtime.execution.DaemonExecutor;
+import dev.lukebemish.taskgraphrunner.runtime.execution.ToolDaemonExecutor;
 import dev.lukebemish.taskgraphrunner.runtime.util.Tools;
 import org.jspecify.annotations.Nullable;
 
@@ -33,6 +33,7 @@ public class JstTask extends Task {
     private final List<TaskInput> inputs;
     private final List<ArgumentProcessor.Arg> args;
     private final Map<String, String> outputExtensions;
+    private final boolean classpathScopedJvm;
 
     public JstTask(TaskModel.Jst model, WorkItem workItem, Context context) {
         super(model);
@@ -82,6 +83,8 @@ public class JstTask extends Task {
 
         this.args = new ArrayList<>();
         ArgumentProcessor.processArgs("arg", model.args, this.args, workItem, context, outputExtensions);
+
+        this.classpathScopedJvm = model.classpathScopedJvm;
     }
 
     private void collectArguments(ArrayList<String> command, Context context, Path workingDirectory) {
@@ -150,7 +153,7 @@ public class JstTask extends Task {
         } catch (IOException e) {
             throw new UncheckedIOException(e);
         }
-        DaemonExecutor.execute(classpath, mainClass, logFile, command.toArray(String[]::new), context);
+        ToolDaemonExecutor.execute(classpath, mainClass, logFile, command.toArray(String[]::new), context, classpathScopedJvm);
 
         if (this.interfaceInjection == null || this.interfaceInjection.paths(context).isEmpty()) {
             // Make an empty stubs zip
