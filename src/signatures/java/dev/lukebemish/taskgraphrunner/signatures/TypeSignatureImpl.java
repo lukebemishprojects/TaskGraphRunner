@@ -4,7 +4,6 @@ import org.jspecify.annotations.Nullable;
 import org.objectweb.asm.ClassWriter;
 import org.objectweb.asm.Opcodes;
 
-import java.nio.ByteBuffer;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -352,9 +351,8 @@ final class TypeSignatureImpl {
                 } else {
                     return WildcardType.INSTANCE;
                 }
-            }
-
-            if (tokens.peek() instanceof SourceToken.Name name) {
+            } else if (tokens.peek() instanceof SourceToken.Name name) {
+                tokens.poll();
                 return switch (name.name) {
                     case "int" -> Primitive.INT;
                     case "boolean" -> Primitive.BOOLEAN;
@@ -638,7 +636,7 @@ final class TypeSignatureImpl {
         }
 
         @Override
-        public ByteBuffer binaryStub() {
+        public byte[] binaryStub() {
             if (suffix != null) {
                 throw new UnsupportedOperationException("Cannot create binary stub for class type with suffix");
             }
@@ -662,7 +660,7 @@ final class TypeSignatureImpl {
                 new String[0]
             );
             classWriter.visitEnd();
-            return ByteBuffer.wrap(classWriter.toByteArray()).asReadOnlyBuffer();
+            return classWriter.toByteArray();
         }
 
         @Override

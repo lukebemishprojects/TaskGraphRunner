@@ -1,7 +1,5 @@
 package dev.lukebemish.taskgraphrunner.signatures;
 
-import java.nio.ByteBuffer;
-
 public sealed interface TypeSignature permits TypeSignatureImpl.ArrayType, TypeSignatureImpl.BoundedType, TypeSignatureImpl.ClassType, TypeSignatureImpl.ClassTypeSuffix, TypeSignatureImpl.ParameterType, TypeSignatureImpl.Primitive, TypeSignatureImpl.WildcardType {
     String binary();
     String source();
@@ -11,7 +9,7 @@ public sealed interface TypeSignature permits TypeSignatureImpl.ArrayType, TypeS
     default String fabric() {
         throw new UnsupportedOperationException("Signature "+source()+" does not support fabric injections");
     }
-    default ByteBuffer binaryStub() {
+    default byte[] binaryStub() {
         throw new UnsupportedOperationException("Signature "+binary()+" does not support binary stubs");
     }
     default String sourceStub() {

@@ -322,7 +322,7 @@ public class InterfaceInjectionTask extends Task {
                                 generated.add(binaryName);
                                 var stubEntry = new ZipEntry(binaryName + ".class");
                                 stubsJarOut.putNextEntry(stubEntry);
-                                stubsJarOut.write(signature.binaryStub().array());
+                                stubsJarOut.write(signature.binaryStub());
                                 stubsJarOut.closeEntry();
                             }
                         }
