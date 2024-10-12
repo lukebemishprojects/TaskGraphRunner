@@ -356,100 +356,101 @@ public class ToolDaemonExecutor implements AutoCloseable {
         var fileHash = HashUtils.hash(jar);
         var outJarPath = context.transformCachePath(TRANSFORM_VERSION).resolve(jar.getFileName().toString()).resolve(fileHash + ".jar");
         var outJarMarker = context.transformCachePath(TRANSFORM_VERSION).resolve(jar.getFileName().toString()).resolve(fileHash + ".jar.marker");
-        Files.createDirectories(outJarPath.getParent());
-        if (Files.exists(outJarMarker)) {
-            FileUtils.setLastAccessedTime(outJarMarker, now);
-            if (Files.exists(outJarMarker)) {
-                return outJarPath;
-            }
-        }
         var nameHash = HashUtils.hash(jar.getFileName().toString());
-        try (var ignored = context.lockManager().lock("transform."+TRANSFORM_VERSION+"."+nameHash+"."+fileHash);
-             var out = Files.newOutputStream(outJarPath);
-             var in = Files.newInputStream(jar);
-             var inJar = new JarInputStream(in);
-             var outJar = new JarOutputStream(out, inJar.getManifest())) {
+        try (var ignored = context.lockManager().lock("transform."+TRANSFORM_VERSION+"."+nameHash+"."+fileHash)) {
+            Files.createDirectories(outJarPath.getParent());
+            if (Files.exists(outJarMarker)) {
+                FileUtils.setLastAccessedTime(outJarMarker, now);
+                if (Files.exists(outJarMarker)) {
+                    return outJarPath;
+                }
+            }
+            try (var out = Files.newOutputStream(outJarPath);
+                 var in = Files.newInputStream(jar);
+                 var inJar = new JarInputStream(in);
+                 var outJar = new JarOutputStream(out, inJar.getManifest())) {
 
-            ZipEntry entry;
-            while ((entry = inJar.getNextEntry()) != null) {
-                if (!entry.getName().endsWith(".class")) {
-                    outJar.putNextEntry(entry);
-                    inJar.transferTo(outJar);
-                    outJar.closeEntry();
-                } else {
-                    var newEntry = new ZipEntry(entry.getName());
-                    if (entry.getComment() != null) {
-                        newEntry.setComment(entry.getComment());
-                    }
-                    if (entry.getCreationTime() != null) {
-                        newEntry.setCreationTime(entry.getCreationTime());
-                    }
-                    if (entry.getLastModifiedTime() != null) {
-                        newEntry.setLastModifiedTime(entry.getLastModifiedTime());
-                    }
-                    if (entry.getLastAccessTime() != null) {
-                        newEntry.setLastAccessTime(entry.getLastAccessTime());
-                    }
-                    if (entry.getExtra() != null) {
-                        newEntry.setExtra(entry.getExtra());
-                    }
-                    outJar.putNextEntry(newEntry);
-
-                    ClassReader reader = new ClassReader(inJar);
-                    ClassWriter writer = new ClassWriter(0);
-                    ClassVisitor visitor = new ClassVisitor(Opcodes.ASM9, writer) {
-                        String className;
-
-                        @Override
-                        public void visit(int version, int access, String name, String signature, String superName, String[] interfaces) {
-                            className = name;
-                            super.visit(version, access, name, signature, superName, interfaces);
+                ZipEntry entry;
+                while ((entry = inJar.getNextEntry()) != null) {
+                    if (!entry.getName().endsWith(".class")) {
+                        outJar.putNextEntry(entry);
+                        inJar.transferTo(outJar);
+                        outJar.closeEntry();
+                    } else {
+                        var newEntry = new ZipEntry(entry.getName());
+                        if (entry.getComment() != null) {
+                            newEntry.setComment(entry.getComment());
                         }
+                        if (entry.getCreationTime() != null) {
+                            newEntry.setCreationTime(entry.getCreationTime());
+                        }
+                        if (entry.getLastModifiedTime() != null) {
+                            newEntry.setLastModifiedTime(entry.getLastModifiedTime());
+                        }
+                        if (entry.getLastAccessTime() != null) {
+                            newEntry.setLastAccessTime(entry.getLastAccessTime());
+                        }
+                        if (entry.getExtra() != null) {
+                            newEntry.setExtra(entry.getExtra());
+                        }
+                        outJar.putNextEntry(newEntry);
 
-                        @Override
-                        public MethodVisitor visitMethod(int access, String name, String descriptor, String signature, String[] exceptions) {
-                            var delegate = super.visitMethod(access, name, descriptor, signature, exceptions);
-                            return new MethodVisitor(Opcodes.ASM9, delegate) {
-                                @Override
-                                public void visitFieldInsn(int opcode, String owner, String name, String descriptor) {
-                                    if ("java/lang/System".equals(owner) && opcode == Opcodes.GETSTATIC) {
-                                        switch (name) {
-                                            case "out", "err", "in" -> {
-                                                super.visitMethodInsn(Opcodes.INVOKESTATIC, "dev/lukebemish/taskgraphrunner/execution/SystemStreams", name, "()"+descriptor, false);
+                        ClassReader reader = new ClassReader(inJar);
+                        ClassWriter writer = new ClassWriter(0);
+                        ClassVisitor visitor = new ClassVisitor(Opcodes.ASM9, writer) {
+                            String className;
+
+                            @Override
+                            public void visit(int version, int access, String name, String signature, String superName, String[] interfaces) {
+                                className = name;
+                                super.visit(version, access, name, signature, superName, interfaces);
+                            }
+
+                            @Override
+                            public MethodVisitor visitMethod(int access, String name, String descriptor, String signature, String[] exceptions) {
+                                var delegate = super.visitMethod(access, name, descriptor, signature, exceptions);
+                                return new MethodVisitor(Opcodes.ASM9, delegate) {
+                                    @Override
+                                    public void visitFieldInsn(int opcode, String owner, String name, String descriptor) {
+                                        if ("java/lang/System".equals(owner) && opcode == Opcodes.GETSTATIC) {
+                                            switch (name) {
+                                                case "out", "err", "in" -> {
+                                                    super.visitMethodInsn(Opcodes.INVOKESTATIC, "dev/lukebemish/taskgraphrunner/execution/SystemStreams", name, "()" + descriptor, false);
+                                                    return;
+                                                }
+                                            }
+                                        }
+                                        super.visitFieldInsn(opcode, owner, name, descriptor);
+                                    }
+
+                                    @Override
+                                    public void visitMethodInsn(int opcode, String owner, String name, String descriptor, boolean isInterface) {
+                                        if ("java/lang/System".equals(owner)) {
+                                            if (name.equals("exit") && opcode == Opcodes.INVOKESTATIC) {
+                                                super.visitMethodInsn(opcode, "dev/lukebemish/taskgraphrunner/execution/ExitScope", name, descriptor, false);
+                                                return;
+                                            }
+                                        } else if ("java/lang/Runtime".equals(owner)) {
+                                            if (name.equals("exit") && (opcode == Opcodes.INVOKEVIRTUAL || opcode == Opcodes.INVOKESPECIAL)) {
+                                                super.visitInsn(Opcodes.POP);
+                                                super.visitMethodInsn(opcode, "dev/lukebemish/taskgraphrunner/execution/ExitScope", name, descriptor, false);
                                                 return;
                                             }
                                         }
+                                        super.visitMethodInsn(opcode, owner, name, descriptor, isInterface);
                                     }
-                                    super.visitFieldInsn(opcode, owner, name, descriptor);
-                                }
-
-                                @Override
-                                public void visitMethodInsn(int opcode, String owner, String name, String descriptor, boolean isInterface) {
-                                    if ("java/lang/System".equals(owner)) {
-                                        if (name.equals("exit") && opcode == Opcodes.INVOKESTATIC) {
-                                            super.visitMethodInsn(opcode, "dev/lukebemish/taskgraphrunner/execution/ExitScope", name, descriptor, false);
-                                            return;
-                                        }
-                                    } else if ("java/lang/Runtime".equals(owner)) {
-                                        if (name.equals("exit") && (opcode == Opcodes.INVOKEVIRTUAL || opcode == Opcodes.INVOKESPECIAL)) {
-                                            super.visitInsn(Opcodes.POP);
-                                            super.visitMethodInsn(opcode, "dev/lukebemish/taskgraphrunner/execution/ExitScope", name, descriptor, false);
-                                            return;
-                                        }
-                                    }
-                                    super.visitMethodInsn(opcode, owner, name, descriptor, isInterface);
-                                }
-                            };
-                        }
-                    };
-                    reader.accept(visitor, 0);
-                    outJar.write(writer.toByteArray());
-                    outJar.closeEntry();
+                                };
+                            }
+                        };
+                        reader.accept(visitor, 0);
+                        outJar.write(writer.toByteArray());
+                        outJar.closeEntry();
+                    }
                 }
-            }
 
-            Files.createFile(outJarMarker);
-            FileUtils.setLastAccessedTime(outJarMarker, now);
+                Files.createFile(outJarMarker);
+                FileUtils.setLastAccessedTime(outJarMarker, now);
+            }
         }
         return outJarPath;
     }

@@ -15,6 +15,7 @@ repositories {
 sourceSets {
     model {}
     execution {}
+    signatures {}
 }
 
 java {
@@ -30,6 +31,11 @@ java {
     }
     registerFeature('execution') {
         usingSourceSet(sourceSets.execution)
+        withSourcesJar()
+        withJavadocJar()
+    }
+    registerFeature('signatures') {
+        usingSourceSet(sourceSets.signatures)
         withSourcesJar()
         withJavadocJar()
     }
@@ -108,8 +114,16 @@ dependencies {
             requireCapability("dev.lukebemish:taskgraphrunner-model")
         }
     }
+    implementation(project(':')) {
+        capabilities {
+            requireCapability("dev.lukebemish:taskgraphrunner-signatures")
+        }
+    }
     modelApi 'com.google.code.gson:gson:2.11.0'
     modelCompileOnlyApi 'org.jspecify:jspecify:1.0.0'
+
+    signaturesApi 'org.ow2.asm:asm:9.7'
+    signaturesCompileOnly 'org.jspecify:jspecify:1.0.0'
 
     executionCompileOnly 'org.jspecify:jspecify:1.0.0'
 }

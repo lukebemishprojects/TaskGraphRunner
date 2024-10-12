@@ -9,6 +9,7 @@ import dev.lukebemish.taskgraphrunner.runtime.Task;
 import dev.lukebemish.taskgraphrunner.runtime.TaskInput;
 import dev.lukebemish.taskgraphrunner.runtime.util.JsonUtils;
 import dev.lukebemish.taskgraphrunner.runtime.util.NonLoadingClassLoader;
+import dev.lukebemish.taskgraphrunner.signatures.TypeSignature;
 import org.jspecify.annotations.Nullable;
 import org.objectweb.asm.ClassReader;
 import org.objectweb.asm.ClassVisitor;
@@ -309,46 +310,20 @@ public class InterfaceInjectionTask extends Task {
                     for (var entry : interfaceMap.entrySet()) {
                         var target = entry.getKey();
                         for (var injection : entry.getValue()) {
+                            var signature = TypeSignature.fromNeo(injection, classFinder::hasClass);
+                            String binaryName = injection;
+                            boolean parameterized = false;
                             if (injection.contains("<")) {
-                                var binaryName = injection.substring(0, injection.indexOf('<'));
-                                if (!injection.contains(">")) {
-                                    throw new IllegalArgumentException("Invalid injection: " + injection);
-                                }
-                                var signature = injection.substring(injection.indexOf('<'), injection.lastIndexOf('>')+1);
-                                var parsedSignature = parseSignature(binaryName, signature, classFinder);
-                                injections.computeIfAbsent(target, k -> new ArrayList<>()).add(new InjectionData(binaryName, parsedSignature.signature()));
-                                if (!classFinder.hasClass(binaryName) && !generated.contains(binaryName)) {
-                                    generated.add(binaryName);
-                                    var stubEntry = new ZipEntry(binaryName + ".class");
-                                    stubsJarOut.putNextEntry(stubEntry);
-                                    var classWriter = new ClassWriter(0);
-                                    StringBuilder signatureBuilder = new StringBuilder("<");
-                                    for (int i = 0; i < parsedSignature.parameters(); i++) {
-                                        int quotient = i / 26;
-                                        int remainder = i % 26;
-                                        signatureBuilder.append((char)('A' + remainder));
-                                        while (quotient > 0) {
-                                            remainder = quotient % 26;
-                                            quotient /= 26;
-                                            signatureBuilder.append((char)('A' + remainder));
-                                        }
-                                        signatureBuilder.append(":Ljava/lang/Object;");
-                                    }
-                                    signatureBuilder.append(">Ljava/lang/Object;");
-                                    classWriter.visit(
-                                        Opcodes.V1_8,
-                                        Opcodes.ACC_PUBLIC | Opcodes.ACC_INTERFACE | Opcodes.ACC_ABSTRACT,
-                                        binaryName,
-                                        signatureBuilder.toString(),
-                                        "java/lang/Object",
-                                        new String[0]
-                                    );
-                                    classWriter.visitEnd();
-                                    stubsJarOut.write(classWriter.toByteArray());
-                                    stubsJarOut.closeEntry();
-                                }
-                            } else {
-                                injections.computeIfAbsent(target, k -> new ArrayList<>()).add(new InjectionData(injection, null));
+                                binaryName = injection.substring(0, injection.indexOf('<'));
+                                parameterized = true;
+                            }
+                            injections.computeIfAbsent(target, k -> new ArrayList<>()).add(new InjectionData(binaryName, parameterized ? signature.binary() : null));
+                            if (!classFinder.hasClass(binaryName) && !generated.contains(binaryName)) {
+                                generated.add(binaryName);
+                                var stubEntry = new ZipEntry(binaryName + ".class");
+                                stubsJarOut.putNextEntry(stubEntry);
+                                stubsJarOut.write(signature.binaryStub().array());
+                                stubsJarOut.closeEntry();
                             }
                         }
                     }
