@@ -424,7 +424,7 @@ final class TypeSignatureImpl {
                 type = new ArrayType(type);
             }
 
-            throw new IllegalArgumentException("Expected type, found token "+tokens.peek());
+            return type;
         }
 
         private static void readToken(Deque<SourceToken> tokens, SourceToken expected) {
