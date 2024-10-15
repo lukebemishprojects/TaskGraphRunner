@@ -49,6 +49,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Queue;
 import java.util.Set;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.Future;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -153,7 +154,7 @@ public abstract class Task implements RecordedInput {
         return nodes.values();
     }
 
-    private static void executeNode(Context context, Consumer<Future<?>> futureConsumer, GraphNode node) {
+    private static void executeNode(Context context, Consumer<Future<?>> futureConsumer, GraphNode node, AtomicInteger runningCounter, CompletableFuture<?> counterFuture) {
         futureConsumer.accept(context.submit(() -> {
             LOGGER.debug("Executing task {} which is a dependency of {}", node.task.name(), node.dependentMap.keySet());
             try (var ignored = node.task.lock(context)) {
@@ -171,9 +172,13 @@ public abstract class Task implements RecordedInput {
                 var remaining = dependent.task.remainingDependencies.decrementAndGet();
                 if (remaining <= 0) {
                     if (!dependent.task.submitted.getAndSet(true)) {
-                        executeNode(context, futureConsumer, dependent);
+                        runningCounter.incrementAndGet();
+                        executeNode(context, futureConsumer, dependent, runningCounter, counterFuture);
                     }
                 }
+            }
+            if (runningCounter.decrementAndGet() <= 0) {
+                counterFuture.complete(null);
             }
         }));
     }
@@ -181,12 +186,20 @@ public abstract class Task implements RecordedInput {
     static void executeTasks(Context context, Map<String, Map<String, Path>> actions) {
         var originalNodes = assemble(context, actions);
         var futures = new ConcurrentLinkedQueue<Future<?>>();
+        var runningCounter = new AtomicInteger(0);
+        var counterFuture = new CompletableFuture<>();
         for (var node : originalNodes) {
             if (node.task.remainingDependencies.get() <= 0) {
-                executeNode(context, futures::add, node);
+                runningCounter.incrementAndGet();
+                executeNode(context, futures::add, node, runningCounter, counterFuture);
             }
         }
         List<Throwable> suppressed = new ArrayList<>();
+        try {
+            counterFuture.get();
+        } catch (Throwable t) {
+            suppressed.add(t);
+        }
         while (!futures.isEmpty()) {
             var future = futures.poll();
             try {
