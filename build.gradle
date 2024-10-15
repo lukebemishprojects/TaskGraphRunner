@@ -199,8 +199,8 @@ dependencies {
     modelAnnotationProcessor cLibs.bundles.annotationprocessor
 
     signaturesApi 'org.ow2.asm:asm:9.7'
-    modelCompileOnly cLibs.bundles.compileonly
-    modelAnnotationProcessor cLibs.bundles.annotationprocessor
+    signaturesCompileOnly cLibs.bundles.compileonly
+    signaturesAnnotationProcessor cLibs.bundles.annotationprocessor
 
     executionCompileOnly cLibs.bundles.compileonly
     executionAnnotationProcessor cLibs.bundles.annotationprocessor
