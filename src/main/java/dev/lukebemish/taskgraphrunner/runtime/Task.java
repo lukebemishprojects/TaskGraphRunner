@@ -156,29 +156,35 @@ public abstract class Task implements RecordedInput {
 
     private static void executeNode(Context context, Consumer<Future<?>> futureConsumer, GraphNode node, AtomicInteger runningCounter, CompletableFuture<?> counterFuture) {
         futureConsumer.accept(context.submit(() -> {
-            LOGGER.debug("Executing task {} which is a dependency of {}", node.task.name(), node.dependentMap.keySet());
-            try (var ignored = node.task.lock(context)) {
-                node.task.execute(context);
-                for (var entry : node.outputs.entrySet()) {
-                    var outputPath = context.taskOutputPath(node.task, entry.getKey());
-                    try {
-                        Files.copy(outputPath, entry.getValue(), StandardCopyOption.REPLACE_EXISTING);
-                    } catch (IOException e) {
-                        throw new UncheckedIOException(e);
+            try {
+                LOGGER.debug("Executing task {} which is a dependency of {}", node.task.name(), node.dependentMap.keySet());
+                try (var ignored = node.task.lock(context)) {
+                    node.task.execute(context);
+                    for (var entry : node.outputs.entrySet()) {
+                        var outputPath = context.taskOutputPath(node.task, entry.getKey());
+                        try {
+                            Files.copy(outputPath, entry.getValue(), StandardCopyOption.REPLACE_EXISTING);
+                        } catch (IOException e) {
+                            throw new UncheckedIOException(e);
+                        }
                     }
                 }
-            }
-            for (var dependent : node.dependents) {
-                var remaining = dependent.task.remainingDependencies.decrementAndGet();
-                if (remaining <= 0) {
-                    if (!dependent.task.submitted.getAndSet(true)) {
-                        runningCounter.incrementAndGet();
-                        executeNode(context, futureConsumer, dependent, runningCounter, counterFuture);
+                for (var dependent : node.dependents) {
+                    var remaining = dependent.task.remainingDependencies.decrementAndGet();
+                    if (remaining <= 0) {
+                        if (!dependent.task.submitted.getAndSet(true)) {
+                            runningCounter.incrementAndGet();
+                            executeNode(context, futureConsumer, dependent, runningCounter, counterFuture);
+                        }
                     }
                 }
-            }
-            if (runningCounter.decrementAndGet() <= 0) {
+                if (runningCounter.decrementAndGet() <= 0) {
+                    counterFuture.complete(null);
+                }
+            } catch (Throwable t) {
+                // Something messed up -- allow the program to exit
                 counterFuture.complete(null);
+                throw t;
             }
         }));
     }
