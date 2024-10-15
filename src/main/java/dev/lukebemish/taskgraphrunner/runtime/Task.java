@@ -189,7 +189,7 @@ public abstract class Task implements RecordedInput {
     static void executeTasks(Context context, Map<String, Map<String, Path>> actions) {
         var originalNodes = assemble(context, actions);
         for (var node : originalNodes) {
-            if (node.task.remainingDependencies.get() <= 0) {
+            if (node.task.remainingDependencies.get() <= 0 && !node.task.submitted.getAndSet(true)) {
                 executeNode(context, node);
             }
         }
