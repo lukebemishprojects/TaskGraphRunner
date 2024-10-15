@@ -50,11 +50,8 @@ import java.util.Map;
 import java.util.Queue;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ConcurrentLinkedQueue;
-import java.util.concurrent.Future;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.function.Consumer;
 
 public abstract class Task implements RecordedInput {
     private static final Logger LOGGER = LoggerFactory.getLogger(Task.class);
@@ -108,6 +105,8 @@ public abstract class Task implements RecordedInput {
 
     private record Action(String task, Map<String, Path> outputs) {}
 
+    private final CompletableFuture<?> taskFuture = new CompletableFuture<>();
+
     private static Collection<GraphNode> assemble(Context context, Map<String, Map<String, Path>> actions) {
         Map<String, GraphNode> nodes = new HashMap<>();
         Queue<Action> queue = new ArrayDeque<>();
@@ -154,9 +153,12 @@ public abstract class Task implements RecordedInput {
         return nodes.values();
     }
 
-    private static void executeNode(Context context, Consumer<Future<?>> futureConsumer, GraphNode node, AtomicInteger runningCounter, CompletableFuture<?> counterFuture) {
-        futureConsumer.accept(context.submit(() -> {
+    private static void executeNode(Context context, GraphNode node) {
+        context.submit(() -> {
             try {
+                if (node.task.remainingDependencies.get() > 0) {
+                    throw new IllegalStateException("Task "+node.task.name()+" execution cancelled "+node.task.remainingDependencies.get()+" remaining dependencies");
+                }
                 LOGGER.debug("Executing task {} which is a dependency of {}", node.task.name(), node.dependentMap.keySet());
                 try (var ignored = node.task.lock(context)) {
                     node.task.execute(context);
@@ -173,43 +175,28 @@ public abstract class Task implements RecordedInput {
                     var remaining = dependent.task.remainingDependencies.decrementAndGet();
                     if (remaining <= 0) {
                         if (!dependent.task.submitted.getAndSet(true)) {
-                            runningCounter.incrementAndGet();
-                            executeNode(context, futureConsumer, dependent, runningCounter, counterFuture);
+                            executeNode(context, dependent);
                         }
                     }
                 }
-                if (runningCounter.decrementAndGet() <= 0) {
-                    counterFuture.complete(null);
-                }
+                node.task.taskFuture.complete(null);
             } catch (Throwable t) {
-                // Something messed up -- allow the program to exit
-                counterFuture.complete(null);
-                throw t;
+                node.task.taskFuture.completeExceptionally(t);
             }
-        }));
+        });
     }
 
     static void executeTasks(Context context, Map<String, Map<String, Path>> actions) {
         var originalNodes = assemble(context, actions);
-        var futures = new ConcurrentLinkedQueue<Future<?>>();
-        var runningCounter = new AtomicInteger(0);
-        var counterFuture = new CompletableFuture<>();
         for (var node : originalNodes) {
             if (node.task.remainingDependencies.get() <= 0) {
-                runningCounter.incrementAndGet();
-                executeNode(context, futures::add, node, runningCounter, counterFuture);
+                executeNode(context, node);
             }
         }
         List<Throwable> suppressed = new ArrayList<>();
-        try {
-            counterFuture.get();
-        } catch (Throwable t) {
-            suppressed.add(t);
-        }
-        while (!futures.isEmpty()) {
-            var future = futures.poll();
+        for (var node : originalNodes) {
             try {
-                future.get();
+                node.task.taskFuture.get();
             } catch (Throwable t) {
                 suppressed.add(t);
             }
@@ -345,6 +332,8 @@ public abstract class Task implements RecordedInput {
             executed.set(true);
         } catch (Exception e) {
             throw new RuntimeException("Exception in task "+name(),e);
+        } finally {
+            executed.set(true);
         }
     }
 
