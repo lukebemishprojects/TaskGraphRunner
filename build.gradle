@@ -1,16 +1,89 @@
 plugins {
     id 'java-library'
     id 'maven-publish'
-    id 'com.gradleup.shadow' version '8.3.0'
+    id 'signing'
+    id 'com.gradleup.shadow'
+    id 'dev.lukebemish.managedversioning'
 }
 
 group = 'dev.lukebemish'
-// TODO: managed versioning
-version = '0.1.0'
 
-repositories {
-    mavenCentral()
+managedVersioning {
+    versionFile.set project.file('version.properties')
+    versionPRs()
+    versionSnapshots()
+
+    gitHubActions {
+        snapshot {
+            prettyName.set 'Snapshot'
+            workflowDispatch.set(true)
+            onBranches.add 'main'
+            gradleJob {
+                buildCache()
+                cacheReadOnly.set false
+                javaVersion.set '21'
+                name.set 'build'
+                gradlew 'Build', 'build'
+                gradlew 'Publish', 'publish'
+                mavenSnapshot('github')
+            }
+        }
+        release {
+            prettyName.set 'Release'
+            workflowDispatch.set(true)
+            gradleJob {
+                buildCache()
+                javaVersion.set '21'
+                name.set 'build'
+                step {
+                    setupGitUser()
+                }
+                readOnly.set false
+                gradlew 'Tag Release', 'tagRelease'
+                gradlew 'Build', 'build'
+                step {
+                    run.set 'git push && git push --tags'
+                }
+                recordVersion 'Record Version', 'version'
+                dependencySubmission()
+            }
+            gradleJob {
+                buildCache()
+                javaVersion.set '21'
+                name.set 'publish'
+                needs.add('build')
+                tag.set('${{needs.build.outputs.version}}')
+                gradlew 'Publish', 'publish', 'closeAndReleaseSonatypeStagingRepository'
+                sign()
+                mavenCentral()
+                mavenStaging('github')
+            }
+        }
+        build_pr {
+            prettyName.set 'Build PR'
+            pullRequest.set(true)
+            gradleJob {
+                javaVersion.set '21'
+                name.set 'build'
+                gradlew 'Build', 'build'
+                gradlew 'Publish', 'publish'
+                pullRequestArtifact()
+            }
+        }
+        publish_pr {
+            prettyName.set 'Publish PR'
+            publishPullRequestAction(
+                'github',
+                "${project.group.replace('.', '/')}/${project.name}",
+                'Build PR'
+            )
+        }
+    }
+
+    apply()
 }
+
+println "Version: ${project.version}"
 
 sourceSets {
     model {}
@@ -101,9 +174,10 @@ configurations {
 }
 
 dependencies {
-    // TODO: use conventions and cLibs
-    compileOnlyApi 'org.jspecify:jspecify:1.0.0'
-    compileOnly 'org.jetbrains:annotations:24.1.0'
+    compileOnlyApi cLibs.jspecify
+    compileOnly cLibs.bundles.compileonly
+    annotationProcessor cLibs.bundles.annotationprocessor
+
     implementation 'info.picocli:picocli:4.7.6'
     implementation 'org.slf4j:slf4j-simple:2.0.13'
     implementation 'org.ow2.asm:asm:9.7'
@@ -120,12 +194,16 @@ dependencies {
         }
     }
     modelApi 'com.google.code.gson:gson:2.11.0'
-    modelCompileOnlyApi 'org.jspecify:jspecify:1.0.0'
+    modelCompileOnlyApi cLibs.jspecify
+    modelCompileOnly cLibs.bundles.compileonly
+    modelAnnotationProcessor cLibs.bundles.annotationprocessor
 
     signaturesApi 'org.ow2.asm:asm:9.7'
-    signaturesCompileOnly 'org.jspecify:jspecify:1.0.0'
+    modelCompileOnly cLibs.bundles.compileonly
+    modelAnnotationProcessor cLibs.bundles.annotationprocessor
 
-    executionCompileOnly 'org.jspecify:jspecify:1.0.0'
+    executionCompileOnly cLibs.bundles.compileonly
+    executionAnnotationProcessor cLibs.bundles.annotationprocessor
 }
 
 // This keeps the same versions at runtime and compile time
@@ -144,7 +222,19 @@ compileJava {
 publishing {
     publications {
         mavenJava(MavenPublication) {
+            managedVersioning.publishing.sign(signing, it)
+            managedVersioning.publishing.pom(it, 'TaskGraphRunner', 'LGPL-3.0-or-later')
+            pom {
+                name = 'TaskGraphRunner'
+                description = 'A tool to create and execute acyclic directed graphs of tasks, with locking and up-to-date checking'
+            }
+
             from components.java
         }
     }
 }
+
+managedVersioning.publishing.mavenStaging(publishing)
+managedVersioning.publishing.mavenCentral()
+managedVersioning.publishing.mavenPullRequest(publishing)
+managedVersioning.publishing.mavenSnapshot(publishing)
