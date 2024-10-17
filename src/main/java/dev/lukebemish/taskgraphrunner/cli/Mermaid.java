@@ -91,7 +91,7 @@ class Mermaid implements Runnable {
         void visitTask(TaskModel taskModel) {
             String name = taskModel.name();
             taskModel.inputs().forEach(input -> {
-                visitInput(input, name);
+                visitInput(input.getInput(), name);
             });
         }
     }

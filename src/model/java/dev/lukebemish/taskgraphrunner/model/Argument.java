@@ -31,7 +31,7 @@ public abstract sealed class Argument {
         return new Argument.ValueInput(null, new InputValue.DirectInput(new Value.StringValue(value)));
     }
 
-    public abstract Stream<Input> inputs();
+    public abstract Stream<InputHandle> inputs();
 
     static final class ArgumentAdapter extends GsonAdapter<Argument> {
         private static final Map<String, TypeAdapter<? extends Argument>> TASK_TYPES = Map.of(
@@ -95,7 +95,7 @@ public abstract sealed class Argument {
         }
 
         @Override
-        public Stream<Input> inputs() {
+        public Stream<InputHandle> inputs() {
             return Stream.empty();
         }
 
@@ -121,8 +121,8 @@ public abstract sealed class Argument {
         }
 
         @Override
-        public Stream<Input> inputs() {
-            return Stream.of(input);
+        public Stream<InputHandle> inputs() {
+            return Stream.of(InputHandle.of(() -> input, input -> this.input = input));
         }
 
         private static final class Specialized extends FieldAdapter<FileInput> {
@@ -148,7 +148,7 @@ public abstract sealed class Argument {
         }
 
         @Override
-        public Stream<Input> inputs() {
+        public Stream<InputHandle> inputs() {
             return Stream.empty();
         }
 
@@ -175,8 +175,8 @@ public abstract sealed class Argument {
         }
 
         @Override
-        public Stream<Input> inputs() {
-            return input.stream();
+        public Stream<InputHandle> inputs() {
+            return InputHandle.mutableList(input);
         }
 
         private static final class Specialized extends FieldAdapter<LibrariesFile> {
@@ -200,8 +200,8 @@ public abstract sealed class Argument {
         }
 
         @Override
-        public Stream<Input> inputs() {
-            return input.stream();
+        public Stream<InputHandle> inputs() {
+            return InputHandle.mutableList(input);
         }
 
         private static final class Specialized extends FieldAdapter<Classpath> {
@@ -226,8 +226,8 @@ public abstract sealed class Argument {
         }
 
         @Override
-        public Stream<Input> inputs() {
-            return inputs.stream();
+        public Stream<InputHandle> inputs() {
+            return InputHandle.mutableList(inputs);
         }
 
         private static final class Specialized extends FieldAdapter<Zip> {

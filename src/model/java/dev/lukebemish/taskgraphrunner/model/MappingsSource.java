@@ -68,7 +68,7 @@ public sealed interface MappingsSource {
         }
     }
 
-    Stream<Input> inputs();
+    Stream<InputHandle> inputs();
 
     @JsonAdapter(Adapter.class)
     final class File implements MappingsSource {
@@ -79,8 +79,8 @@ public sealed interface MappingsSource {
         }
 
         @Override
-        public Stream<Input> inputs() {
-            return Stream.of(input);
+        public Stream<InputHandle> inputs() {
+            return Stream.of(InputHandle.of(() -> input, value -> input = value));
         }
 
         private static final class Specialized extends FieldAdapter<File> {
@@ -109,7 +109,7 @@ public sealed interface MappingsSource {
         }
 
         @Override
-        public Stream<Input> inputs() {
+        public Stream<InputHandle> inputs() {
             return source.inputs();
         }
     }
@@ -123,7 +123,7 @@ public sealed interface MappingsSource {
         }
 
         @Override
-        public Stream<Input> inputs() {
+        public Stream<InputHandle> inputs() {
             return sources.stream().flatMap(MappingsSource::inputs);
         }
 
@@ -145,8 +145,8 @@ public sealed interface MappingsSource {
         }
 
         @Override
-        public Stream<Input> inputs() {
-            return files.stream();
+        public Stream<InputHandle> inputs() {
+            return InputHandle.mutableList(files);
         }
 
         private static final class Specialized extends FieldAdapter<MergedFiles> {
@@ -167,7 +167,7 @@ public sealed interface MappingsSource {
         }
 
         @Override
-        public Stream<Input> inputs() {
+        public Stream<InputHandle> inputs() {
             return sources.stream().flatMap(MappingsSource::inputs);
         }
 
@@ -189,8 +189,8 @@ public sealed interface MappingsSource {
         }
 
         @Override
-        public Stream<Input> inputs() {
-            return files.stream();
+        public Stream<InputHandle> inputs() {
+            return InputHandle.mutableList(files);
         }
 
         private static final class Specialized extends FieldAdapter<ChainedFiles> {

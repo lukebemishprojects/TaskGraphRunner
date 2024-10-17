@@ -5,6 +5,7 @@ import dev.lukebemish.taskgraphrunner.model.Config;
 import dev.lukebemish.taskgraphrunner.model.Distribution;
 import dev.lukebemish.taskgraphrunner.model.Input;
 import dev.lukebemish.taskgraphrunner.model.InputValue;
+import dev.lukebemish.taskgraphrunner.model.MappingsSource;
 import dev.lukebemish.taskgraphrunner.model.Output;
 import dev.lukebemish.taskgraphrunner.model.PathSensitivity;
 import dev.lukebemish.taskgraphrunner.model.TaskModel;
@@ -22,9 +23,9 @@ public final class SingleVersionGenerator {
     public static final class Options {
         private final @Nullable String accessTransformersParameter;
         private final @Nullable String injectedInterfacesParameter;
-        private final @Nullable String parchmentDataParameter;
         private final Distribution distribution;
         private final @Nullable SidedAnnotation sidedAnnotation;
+        private final @Nullable String mappingsParameter;
 
         public enum SidedAnnotation implements Serializable {
             CPW("CPW"),
@@ -43,12 +44,12 @@ public final class SingleVersionGenerator {
             }
         }
 
-        private Options(@Nullable String accessTransformersParameter, @Nullable String injectedInterfacesParameter, @Nullable String parchmentDataParameter, Distribution distribution, @Nullable SidedAnnotation sidedAnnotation) {
+        private Options(@Nullable String accessTransformersParameter, @Nullable String injectedInterfacesParameter, Distribution distribution, @Nullable SidedAnnotation sidedAnnotation, @Nullable String mappingsParameter) {
             this.accessTransformersParameter = accessTransformersParameter;
             this.injectedInterfacesParameter = injectedInterfacesParameter;
-            this.parchmentDataParameter = parchmentDataParameter;
             this.distribution = distribution;
             this.sidedAnnotation = sidedAnnotation;
+            this.mappingsParameter = mappingsParameter;
         }
 
         public static Builder builder() {
@@ -58,9 +59,9 @@ public final class SingleVersionGenerator {
         public static final class Builder {
             private String accessTransformersParameter = null;
             private String injectedInterfacesParameter = null;
-            private String parchmentDataParameter = null;
             private Distribution distribution = Distribution.JOINED;
             private SidedAnnotation sidedAnnotation;
+            private @Nullable String mappingsParameter = null;
 
             private Builder() {}
 
@@ -74,11 +75,6 @@ public final class SingleVersionGenerator {
                 return this;
             }
 
-            public Builder parchmentDataParameter(String parchmentDataParameter) {
-                this.parchmentDataParameter = parchmentDataParameter;
-                return this;
-            }
-
             public Builder distribution(Distribution distribution) {
                 this.distribution = distribution;
                 return this;
@@ -89,8 +85,13 @@ public final class SingleVersionGenerator {
                 return this;
             }
 
+            public Builder mappings(String mappingsParameter) {
+                this.mappingsParameter = mappingsParameter;
+                return this;
+            }
+
             public Options build() {
-                return new Options(accessTransformersParameter, injectedInterfacesParameter, parchmentDataParameter, distribution, sidedAnnotation);
+                return new Options(accessTransformersParameter, injectedInterfacesParameter, distribution, sidedAnnotation, mappingsParameter);
             }
         }
     }
@@ -183,7 +184,14 @@ public final class SingleVersionGenerator {
         List<Output> additionalClasspath = new ArrayList<>();
 
         // rename the merged jar
-        config.tasks.add(new TaskModel.DownloadMappings("downloadClientMappings", new InputValue.DirectInput(new Value.StringValue("client")), new Input.TaskInput(new Output(downloadJsonName, "output"))));
+        Input mappingsTaskOutput;
+        if (options.mappingsParameter != null) {
+            mappingsTaskOutput = new Input.ParameterInput(options.mappingsParameter);
+        } else {
+            var mappingsTask = new TaskModel.DownloadMappings("downloadClientMappings", new InputValue.DirectInput(new Value.StringValue("client")), new Input.TaskInput(new Output(downloadJsonName, "output")));
+            config.tasks.add(mappingsTask);
+            mappingsTaskOutput = new Input.TaskInput(new Output(mappingsTask.name(), "output"));
+        }
         config.tasks.add(new TaskModel.DaemonExecutedTool(
             "rename",
             List.of(
@@ -192,7 +200,7 @@ public final class SingleVersionGenerator {
                 Argument.direct("--output"),
                 new Argument.FileOutput(null, "output", "jar"),
                 Argument.direct("--map"),
-                new Argument.FileInput(null, new Input.TaskInput(new Output("downloadClientMappings", "output")), PathSensitivity.NONE),
+                new Argument.FileInput(null, mappingsTaskOutput, PathSensitivity.NONE),
                 Argument.direct("--cfg"),
                 new Argument.LibrariesFile(null, List.of(new Input.TaskInput(new Output(listLibrariesName, "output"))), new InputValue.DirectInput(new Value.StringValue("-e="))),
                 Argument.direct("--ann-fix"),
@@ -274,7 +282,7 @@ public final class SingleVersionGenerator {
 
         Output sourcesTask = new Output("decompile", "output");
 
-        boolean useJst = options.parchmentDataParameter != null;
+        boolean useJst = options.mappingsParameter != null;
         if (useJst) {
             var jst = new TaskModel.Jst(
                 "jstTransform",
@@ -287,8 +295,8 @@ public final class SingleVersionGenerator {
                 List.of(new Input.ListInput(List.of(new Input.DirectInput(Value.tool("linemapper-jst")))))
             );
 
-            if (options.parchmentDataParameter != null) {
-                jst.parchmentData = new Input.ParameterInput(options.parchmentDataParameter);
+            if (options.mappingsParameter != null) {
+                jst.parchmentData = new MappingsSource.File(new Input.ParameterInput(options.mappingsParameter));
             }
 
             config.tasks.add(jst);

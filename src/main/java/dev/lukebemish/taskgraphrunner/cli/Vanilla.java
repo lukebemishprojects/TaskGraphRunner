@@ -38,11 +38,11 @@ public class Vanilla implements Runnable {
     @CommandLine.Option(names = "--interface-injection", arity = "*", description = "Interface injection data file path, as artifact:<artifact ID> or file:path form.")
     List<String> interfaceInjection = List.of();
 
-    @CommandLine.Option(names = "--parchment-data", description = "Parchment data, as artifact:<artifact ID> or file:path form.")
-    String parchmentData = null;
-
     @CommandLine.Option(names = "--sided-annotation", description = "Annotation to use for sidedness.")
     SingleVersionGenerator.Options.SidedAnnotation sidedAnnotation;
+
+    @CommandLine.Option(names = "--mappings", description = "Mappings to use, from obfuscated to named, as artifact:<artifact ID> or file:path form.")
+    String mappings = null;
 
     Vanilla(Main main) {
         this.main = main;
@@ -59,10 +59,10 @@ public class Vanilla implements Runnable {
             if (!interfaceInjection.isEmpty()) {
                 optionsBuilder.interfaceInjectionDataParameter("interfaceInjection");
             }
-            if (parchmentData != null) {
-                optionsBuilder.parchmentDataParameter("parchmentData");
-            }
             optionsBuilder.distribution(Distribution.valueOf(distribution.toUpperCase()));
+            if (mappings != null) {
+                optionsBuilder.mappings("mappings");
+            }
             ArtifactManifest manifest = main.makeManifest();
             Config config = SingleVersionGenerator.convert(version, optionsBuilder.build());
             var workItem = new WorkItem();
@@ -86,8 +86,8 @@ public class Vanilla implements Runnable {
             if (!interfaceInjection.isEmpty()) {
                 workItem.parameters.put("interfaceInjection", new Value.ListValue(interfaceInjection.stream().map(s -> (Value) new Value.StringValue(manifest.absolute(s))).toList()));
             }
-            if (parchmentData != null) {
-                workItem.parameters.put("parchmentData", new Value.StringValue(manifest.absolute(parchmentData)));
+            if (mappings != null) {
+                workItem.parameters.put("mappings", new Value.StringValue(manifest.absolute(mappings)));
             }
             config.workItems.add(workItem);
 

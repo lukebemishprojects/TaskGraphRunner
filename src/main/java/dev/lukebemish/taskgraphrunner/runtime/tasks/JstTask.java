@@ -7,7 +7,9 @@ import dev.lukebemish.taskgraphrunner.runtime.Context;
 import dev.lukebemish.taskgraphrunner.runtime.Task;
 import dev.lukebemish.taskgraphrunner.runtime.TaskInput;
 import dev.lukebemish.taskgraphrunner.runtime.execution.ToolDaemonExecutor;
+import dev.lukebemish.taskgraphrunner.runtime.mappings.MappingsSourceImpl;
 import dev.lukebemish.taskgraphrunner.runtime.util.Tools;
+import net.neoforged.srgutils.IMappingFile;
 import org.jspecify.annotations.Nullable;
 
 import java.io.File;
@@ -20,6 +22,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 import java.util.zip.ZipOutputStream;
 
@@ -29,7 +32,7 @@ public class JstTask extends Task {
     private final TaskInput.FileListInput executionClasspath;
     private final TaskInput.@Nullable FileListInput accessTransformers;
     private final TaskInput.@Nullable FileListInput interfaceInjection;
-    private final TaskInput.@Nullable HasFileInput parchmentData;
+    private final @Nullable MappingsSourceImpl parchmentMappingsSource;
     private final List<TaskInput> inputs;
     private final List<ArgumentProcessor.Arg> args;
     private final Map<String, String> outputExtensions;
@@ -71,10 +74,10 @@ public class JstTask extends Task {
             this.interfaceInjection = null;
         }
         if (model.parchmentData != null) {
-            this.parchmentData = TaskInput.file("parchmentData", model.parchmentData, workItem, context, PathSensitivity.NONE);
-            inputs.add(this.parchmentData);
+            this.parchmentMappingsSource = MappingsSourceImpl.of(model.parchmentData, workItem, context, new AtomicInteger());
+            inputs.addAll(this.parchmentMappingsSource.inputs());
         } else {
-            this.parchmentData = null;
+            this.parchmentMappingsSource = null;
         }
 
         this.outputExtensions = new HashMap<>();
@@ -110,11 +113,18 @@ public class JstTask extends Task {
             command.add("--interface-injection-stubs="+context.taskOutputPath(this, "stubs"));
         }
 
-        if (parchmentData != null) {
+        if (parchmentMappingsSource != null) {
             command.add("--enable-parchment");
             // Might eventually look at making this configurable
             command.add("--parchment-conflict-prefix=p");
-            command.add("--parchment-mappings="+parchmentData.path(context).toAbsolutePath());
+            var parchmentFile = workingDirectory.resolve("parchment.tsrg");
+            var mappings = parchmentMappingsSource.makeMappings(context);
+            try {
+                mappings.write(parchmentFile, IMappingFile.Format.TSRG2, false);
+            } catch (IOException e) {
+                throw new UncheckedIOException(e);
+            }
+            command.add("--parchment-mappings="+parchmentFile.toAbsolutePath());
         }
 
         for (int i = 0; i < args.size(); i++) {

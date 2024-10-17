@@ -13,7 +13,6 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 import java.util.function.Function;
 import java.util.stream.Stream;
 
@@ -34,7 +33,7 @@ public sealed abstract class TaskModel {
         return Adapter.TASK_TYPE_NAMES.get(getClass());
     }
 
-    public abstract Stream<Input> inputs();
+    public abstract Stream<InputHandle> inputs();
 
     static final class Adapter extends GsonAdapter<TaskModel> {
         private static final Map<String, TypeAdapter<? extends TaskModel>> TASK_TYPES;
@@ -119,7 +118,7 @@ public sealed abstract class TaskModel {
         }
 
         @Override
-        public Stream<Input> inputs() {
+        public Stream<InputHandle> inputs() {
             return source.inputs();
         }
 
@@ -153,8 +152,11 @@ public sealed abstract class TaskModel {
         }
 
         @Override
-        public Stream<Input> inputs() {
-            return Stream.concat(Stream.of(input, interfaceInjection), classpath.stream());
+        public Stream<InputHandle> inputs() {
+            return Stream.concat(Stream.of(
+                InputHandle.of(() -> input, i -> this.input = i),
+                InputHandle.of(() -> this.interfaceInjection, i -> this.interfaceInjection = i)
+            ), InputHandle.mutableList(classpath));
         }
 
         private static final class Specialized extends FieldAdapter<InterfaceInjection> {
@@ -182,7 +184,7 @@ public sealed abstract class TaskModel {
         public final List<Input> executionClasspath = new ArrayList<>();
         public @Nullable Input accessTransformers = null;
         public @Nullable Input interfaceInjection = null;
-        public @Nullable Input parchmentData = null;
+        public @Nullable MappingsSource parchmentData = null;
         public boolean classpathScopedJvm = false;
 
         public Jst(String name, List<Argument> args, Input input, List<Input> classpath, @Nullable List<Input> executionClasspath) {
@@ -196,11 +198,16 @@ public sealed abstract class TaskModel {
         }
 
         @Override
-        public Stream<Input> inputs() {
+        public Stream<InputHandle> inputs() {
             return Stream.of(
-                Stream.of(input, accessTransformers, interfaceInjection, parchmentData).filter(Objects::nonNull),
-                classpath.stream(),
-                executionClasspath.stream(),
+                Stream.of(
+                    InputHandle.of(() -> input, i -> this.input = i),
+                    InputHandle.of(() -> accessTransformers, i -> this.accessTransformers = i),
+                    InputHandle.of(() -> interfaceInjection, i -> this.interfaceInjection = i)
+                ).filter(h -> h.getInput() != null),
+                (parchmentData != null) ? parchmentData.inputs() : Stream.<InputHandle>empty(),
+                InputHandle.mutableList(classpath),
+                InputHandle.mutableList(executionClasspath),
                 args.stream().flatMap(Argument::inputs)
             ).flatMap(Function.identity());
         }
@@ -216,7 +223,7 @@ public sealed abstract class TaskModel {
                 var jstClasspath = builder.field("executionClasspath", task -> task.executionClasspath, TypeToken.getParameterized(List.class, Input.class).getType());
                 var accessTransformers = builder.field("accessTransformers", task -> task.accessTransformers, Input.class);
                 var interfaceInjection = builder.field("interfaceInjection", task -> task.interfaceInjection, Input.class);
-                var parchmentData = builder.field("parchmentData", task -> task.parchmentData, Input.class);
+                var parchmentData = builder.field("parchmentData", task -> task.parchmentData, MappingsSource.class);
                 var classpathScopedJvm = builder.field("classpathScopedJvm", task -> task.classpathScopedJvm, Boolean.class);
                 return values -> {
                     var jst = new Jst(values.get(name), values.get(args), values.get(input), values.get(classpath), values.get(jstClasspath));
@@ -247,11 +254,11 @@ public sealed abstract class TaskModel {
         }
 
         @Override
-        public Stream<Input> inputs() {
+        public Stream<InputHandle> inputs() {
             return Stream.of(
-                Stream.of(sources),
-                sourcepath.stream(),
-                classpath.stream(),
+                Stream.of(InputHandle.of(() -> sources, i -> this.sources = i)),
+                InputHandle.mutableList(sourcepath),
+                InputHandle.mutableList(classpath),
                 args.stream().flatMap(Argument::inputs)
             ).flatMap(Function.identity());
         }
@@ -296,8 +303,8 @@ public sealed abstract class TaskModel {
         }
 
         @Override
-        public Stream<Input> inputs() {
-            return Stream.concat(args.stream().flatMap(Argument::inputs), classpath.stream());
+        public Stream<InputHandle> inputs() {
+            return Stream.concat(args.stream().flatMap(Argument::inputs), InputHandle.mutableList(classpath));
         }
 
         private static final class Specialized extends FieldAdapter<DaemonExecutedTool> {
@@ -329,7 +336,7 @@ public sealed abstract class TaskModel {
         }
 
         @Override
-        public Stream<Input> inputs() {
+        public Stream<InputHandle> inputs() {
             return args.stream().flatMap(Argument::inputs);
         }
 
@@ -358,8 +365,8 @@ public sealed abstract class TaskModel {
         }
 
         @Override
-        public Stream<Input> inputs() {
-            return Stream.of(versionJson);
+        public Stream<InputHandle> inputs() {
+            return Stream.of(InputHandle.of(() -> versionJson, i -> this.versionJson = i));
         }
 
         private static final class Specialized extends FieldAdapter<DownloadAssets> {
@@ -384,7 +391,7 @@ public sealed abstract class TaskModel {
         }
 
         @Override
-        public Stream<Input> inputs() {
+        public Stream<InputHandle> inputs() {
             return Stream.empty();
         }
 
@@ -414,8 +421,8 @@ public sealed abstract class TaskModel {
         }
 
         @Override
-        public Stream<Input> inputs() {
-            return Stream.of(manifest);
+        public Stream<InputHandle> inputs() {
+            return Stream.of(InputHandle.of(() -> manifest, i -> this.manifest = i));
         }
 
         private static final class Specialized extends FieldAdapter<DownloadJson> {
@@ -446,8 +453,8 @@ public sealed abstract class TaskModel {
         }
 
         @Override
-        public Stream<Input> inputs() {
-            return Stream.of(versionJson);
+        public Stream<InputHandle> inputs() {
+            return Stream.of(InputHandle.of(() -> versionJson, i -> this.versionJson = i));
         }
 
         private static final class Specialized extends FieldAdapter<DownloadDistribution> {
@@ -478,8 +485,8 @@ public sealed abstract class TaskModel {
         }
 
         @Override
-        public Stream<Input> inputs() {
-            return Stream.of(versionJson);
+        public Stream<InputHandle> inputs() {
+            return Stream.of(InputHandle.of(() -> versionJson, i -> this.versionJson = i));
         }
 
         private static final class Specialized extends FieldAdapter<DownloadMappings> {
@@ -510,8 +517,8 @@ public sealed abstract class TaskModel {
         }
 
         @Override
-        public Stream<Input> inputs() {
-            return Stream.of(input);
+        public Stream<InputHandle> inputs() {
+            return Stream.of(InputHandle.of(() -> input, i -> this.input = i));
         }
 
         private static final class Specialized extends FieldAdapter<SplitClassesResources> {
@@ -542,8 +549,8 @@ public sealed abstract class TaskModel {
         }
 
         @Override
-        public Stream<Input> inputs() {
-            return Stream.of(versionJson);
+        public Stream<InputHandle> inputs() {
+            return Stream.of(InputHandle.of(() -> versionJson, i -> this.versionJson = i));
         }
 
         private static final class Specialized extends FieldAdapter<ListClasspath> {
@@ -572,8 +579,8 @@ public sealed abstract class TaskModel {
         }
 
         @Override
-        public Stream<Input> inputs() {
-            return inputs.stream();
+        public Stream<InputHandle> inputs() {
+            return InputHandle.mutableList(inputs);
         }
 
         private static final class Specialized extends FieldAdapter<InjectSources> {
@@ -603,8 +610,11 @@ public sealed abstract class TaskModel {
         }
 
         @Override
-        public Stream<Input> inputs() {
-            return Stream.of(input, patches);
+        public Stream<InputHandle> inputs() {
+            return Stream.of(
+                InputHandle.of(() -> input, i -> this.input = i),
+                InputHandle.of(() -> patches, i -> this.patches = i)
+            );
         }
 
         private static final class Specialized extends FieldAdapter<PatchSources> {
@@ -635,8 +645,8 @@ public sealed abstract class TaskModel {
         }
 
         @Override
-        public Stream<Input> inputs() {
-            return Stream.of(input);
+        public Stream<InputHandle> inputs() {
+            return Stream.of(InputHandle.of(() -> input, i -> this.input = i));
         }
 
         private static final class Specialized extends FieldAdapter<RetrieveData> {
