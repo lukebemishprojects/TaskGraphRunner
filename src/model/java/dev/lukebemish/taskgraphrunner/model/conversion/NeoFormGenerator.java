@@ -6,6 +6,7 @@ import dev.lukebemish.taskgraphrunner.model.Config;
 import dev.lukebemish.taskgraphrunner.model.Distribution;
 import dev.lukebemish.taskgraphrunner.model.Input;
 import dev.lukebemish.taskgraphrunner.model.InputValue;
+import dev.lukebemish.taskgraphrunner.model.MappingsSource;
 import dev.lukebemish.taskgraphrunner.model.Output;
 import dev.lukebemish.taskgraphrunner.model.PathSensitivity;
 import dev.lukebemish.taskgraphrunner.model.TaskModel;
@@ -288,7 +289,7 @@ public final class NeoFormGenerator {
                 jst.interfaceInjection = new Input.ParameterInput(options.injectedInterfacesParameter);
             }
             if (options.parchmentDataParameter != null) {
-                jst.parchmentData = new Input.ParameterInput(options.parchmentDataParameter);
+                jst.parchmentData = new MappingsSource.File(new Input.ParameterInput(options.parchmentDataParameter));
             }
 
             config.tasks.add(jst);
