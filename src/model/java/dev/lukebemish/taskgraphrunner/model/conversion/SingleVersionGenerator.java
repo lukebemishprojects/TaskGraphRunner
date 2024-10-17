@@ -184,13 +184,12 @@ public final class SingleVersionGenerator {
         List<Output> additionalClasspath = new ArrayList<>();
 
         // rename the merged jar
+        config.tasks.add(new TaskModel.DownloadMappings("downloadClientMappings", new InputValue.DirectInput(new Value.StringValue("client")), new Input.TaskInput(new Output(downloadJsonName, "output"))));
         Input mappingsTaskOutput;
         if (options.mappingsParameter != null) {
             mappingsTaskOutput = new Input.ParameterInput(options.mappingsParameter);
         } else {
-            var mappingsTask = new TaskModel.DownloadMappings("downloadClientMappings", new InputValue.DirectInput(new Value.StringValue("client")), new Input.TaskInput(new Output(downloadJsonName, "output")));
-            config.tasks.add(mappingsTask);
-            mappingsTaskOutput = new Input.TaskInput(new Output(mappingsTask.name(), "output"));
+            mappingsTaskOutput = new Input.TaskInput(new Output("downloadClientMappings", "output"));
         }
         config.tasks.add(new TaskModel.DaemonExecutedTool(
             "rename",
