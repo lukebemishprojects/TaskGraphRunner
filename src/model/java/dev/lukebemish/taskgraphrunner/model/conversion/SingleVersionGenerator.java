@@ -85,7 +85,7 @@ public final class SingleVersionGenerator {
                 return this;
             }
 
-            public Builder mappings(String mappingsParameter) {
+            public Builder mappingsParameter(String mappingsParameter) {
                 this.mappingsParameter = mappingsParameter;
                 return this;
             }

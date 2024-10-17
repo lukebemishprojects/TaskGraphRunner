@@ -61,7 +61,7 @@ public class Vanilla implements Runnable {
             }
             optionsBuilder.distribution(Distribution.valueOf(distribution.toUpperCase()));
             if (mappings != null) {
-                optionsBuilder.mappings("mappings");
+                optionsBuilder.mappingsParameter("mappings");
             }
             ArtifactManifest manifest = main.makeManifest();
             Config config = SingleVersionGenerator.convert(version, optionsBuilder.build());
