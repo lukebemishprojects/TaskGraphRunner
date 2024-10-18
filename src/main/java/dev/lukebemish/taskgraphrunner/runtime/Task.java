@@ -50,6 +50,7 @@ import java.util.Map;
 import java.util.Queue;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -182,8 +183,22 @@ public abstract class Task implements RecordedInput {
                 node.task.taskFuture.complete(null);
             } catch (Throwable t) {
                 node.task.taskFuture.completeExceptionally(t);
+                node.task.killDependents(node.dependents);
             }
         });
+    }
+
+    public static class DependencyFailedToExecuteException extends RuntimeException {}
+
+    private void killDependents(List<GraphNode> nodes) {
+        for (var dependent : nodes) {
+            var task = dependent.task;
+            if (task.taskFuture.isDone()) {
+                continue;
+            }
+            task.taskFuture.completeExceptionally(new DependencyFailedToExecuteException());
+            task.killDependents(dependent.dependents);
+        }
     }
 
     static void executeTasks(Context context, Map<String, Map<String, Path>> actions) {
@@ -197,6 +212,11 @@ public abstract class Task implements RecordedInput {
         for (var node : originalNodes) {
             try {
                 node.task.taskFuture.get();
+            } catch (ExecutionException e) {
+                if (e.getCause() instanceof DependencyFailedToExecuteException) {
+                    continue;
+                }
+                suppressed.add(e.getCause());
             } catch (Throwable t) {
                 suppressed.add(t);
             }
@@ -288,7 +308,6 @@ public abstract class Task implements RecordedInput {
                     if (allOutputsMatch && upToDate(lastExecuted, context)) {
                         JsonElement newInputState = recordedValue(context);
                         if (newInputState.equals(existingInputState)) {
-                            executed.set(true);
                             LOGGER.debug("Task `" + name + "` is up-to-date.");
                             return;
                         }

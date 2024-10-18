@@ -7,12 +7,19 @@ import dev.lukebemish.taskgraphrunner.model.Value;
 import dev.lukebemish.taskgraphrunner.model.WorkItem;
 import dev.lukebemish.taskgraphrunner.runtime.Context;
 import dev.lukebemish.taskgraphrunner.runtime.TaskInput;
-import net.neoforged.srgutils.IMappingBuilder;
-import net.neoforged.srgutils.IMappingFile;
+import net.fabricmc.mappingio.MappingReader;
+import net.fabricmc.mappingio.MappingWriter;
+import net.fabricmc.mappingio.format.MappingFormat;
+import net.fabricmc.mappingio.tree.MappingTree;
+import net.fabricmc.mappingio.tree.MemoryMappingTree;
+import net.fabricmc.mappingio.tree.VisitableMappingTree;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
+import java.io.Writer;
 import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -20,20 +27,46 @@ import java.util.stream.Collectors;
 import java.util.zip.ZipFile;
 
 public sealed interface MappingsSourceImpl {
-    IMappingFile makeMappings(Context context);
+    MappingTree makeMappings(Context context);
 
     List<TaskInput> inputs();
 
-    static IMappingFile.Format getFormat(MappingsFormat format) {
+    interface MappingConsumer extends AutoCloseable {
+        void accept(MappingTree mappings) throws IOException;
+
+        @Override
+        void close() throws IOException;
+
+        static MappingConsumer wrap(MappingWriter writer) {
+            return new MappingConsumer() {
+                @Override
+                public void accept(MappingTree mappings) throws IOException {
+                    mappings.accept(writer);
+                }
+
+                @Override
+                public void close() throws IOException {
+                    writer.close();
+                }
+            };
+        }
+    }
+
+    static MappingConsumer getWriter(Writer writer, MappingsFormat format) throws IOException {
         return switch (format) {
-            case SRG -> IMappingFile.Format.SRG;
-            case XSRG -> IMappingFile.Format.XSRG;
-            case CSRG -> IMappingFile.Format.CSRG;
-            case TSRG -> IMappingFile.Format.TSRG;
-            case TSRG2 -> IMappingFile.Format.TSRG2;
-            case PROGUARD -> IMappingFile.Format.PG;
-            case TINY1 -> IMappingFile.Format.TINY1;
-            case TINY2 -> IMappingFile.Format.TINY;
+            case SRG -> MappingConsumer.wrap(MappingWriter.create(writer, MappingFormat.SRG_FILE));
+            case XSRG -> MappingConsumer.wrap(MappingWriter.create(writer, MappingFormat.XSRG_FILE));
+            case CSRG -> MappingConsumer.wrap(MappingWriter.create(writer, MappingFormat.CSRG_FILE));
+            case TSRG -> MappingConsumer.wrap(MappingWriter.create(writer, MappingFormat.TSRG_FILE));
+            case TSRG2 -> MappingConsumer.wrap(MappingWriter.create(writer, MappingFormat.TSRG_2_FILE));
+            case PROGUARD -> MappingConsumer.wrap(MappingWriter.create(writer, MappingFormat.PROGUARD_FILE));
+            case TINY -> MappingConsumer.wrap(MappingWriter.create(writer, MappingFormat.TINY_FILE));
+            case TINY2 -> MappingConsumer.wrap(MappingWriter.create(writer, MappingFormat.TINY_2_FILE));
+            case ENIGMA -> MappingConsumer.wrap(MappingWriter.create(writer, MappingFormat.ENIGMA_FILE));
+            case JAM -> MappingConsumer.wrap(MappingWriter.create(writer, MappingFormat.JAM_FILE));
+            case RECAF -> MappingConsumer.wrap(MappingWriter.create(writer, MappingFormat.RECAF_SIMPLE_FILE));
+            case JOBF -> MappingConsumer.wrap(MappingWriter.create(writer, MappingFormat.JOBF_FILE));
+            case PARCHMENT -> new ParchmentMappingWriter(writer);
         };
     }
 
@@ -74,22 +107,52 @@ public sealed interface MappingsSourceImpl {
         }
 
         @Override
-        public IMappingFile makeMappings(Context context) {
-            return files.paths(context).stream()
+        public MappingTree makeMappings(Context context) {
+            return MappingsUtil.chain(files.paths(context).stream()
                 .map(p -> {
                     try {
-                        return IMappingFile.load(p.toFile());
+                        return loadMappings(p);
                     } catch (IOException e) {
                         throw new UncheckedIOException(e);
                     }
                 })
-                .reduce(IMappingFile::chain).orElse(IMappingBuilder.create("source", "target").build().getMap("source", "target"));
+                .toList());
         }
 
         @Override
         public List<TaskInput> inputs() {
             return List.of(label, files);
         }
+    }
+
+    private static MappingTree loadMappings(Path path) throws IOException {
+        var extension = path.getFileName().toString().substring(path.getFileName().toString().lastIndexOf('.') + 1);
+        if ("zip".equals(extension) || "jar".equals(extension)) {
+            // It's an archive file; let's open it and find the entry we need, if we can, saving it to a temp file
+            try (var zip = new ZipFile(path.toFile())) {
+                var tinyMappings = zip.getEntry("mappings/mappings.tiny");
+                if (tinyMappings != null) {
+                    var tempFile = Files.createTempFile("crochet-extracted", ".tiny");
+                    try (var input = zip.getInputStream(tinyMappings)) {
+                        Files.copy(input, tempFile, StandardCopyOption.REPLACE_EXISTING);
+                    }
+                    return loadMappings(tempFile);
+                }
+                var parchmentJson = zip.getEntry("parchment.json");
+                if (parchmentJson != null) {
+                    var tempFile = Files.createTempFile("crochet-extracted", ".json");
+                    try (var input = zip.getInputStream(parchmentJson)) {
+                        Files.copy(input, tempFile, StandardCopyOption.REPLACE_EXISTING);
+                    }
+                    return loadMappings(tempFile);
+                }
+            }
+        } else if ("json".equals(extension)) {
+            return ParchmentMappingsReader.loadMappings(path);
+        }
+        VisitableMappingTree tree = new MemoryMappingTree();
+        MappingReader.read(path, tree);
+        return tree;
     }
 
     final class ChainedSource implements MappingsSourceImpl {
@@ -102,10 +165,10 @@ public sealed interface MappingsSourceImpl {
         }
 
         @Override
-        public IMappingFile makeMappings(Context context) {
-            return sources.stream()
+        public MappingTree makeMappings(Context context) {
+            return MappingsUtil.chain(sources.stream()
                 .map(s -> s.makeMappings(context))
-                .reduce(IMappingFile::chain).orElse(IMappingBuilder.create("source", "target").build().getMap("source", "target"));
+                .toList());
         }
 
         @Override
@@ -128,16 +191,16 @@ public sealed interface MappingsSourceImpl {
         }
 
         @Override
-        public IMappingFile makeMappings(Context context) {
-            return files.paths(context).stream()
+        public MappingTree makeMappings(Context context) {
+            return MappingsUtil.merge(files.paths(context).stream()
                 .map(p -> {
                     try {
-                        return IMappingFile.load(p.toFile());
+                        return loadMappings(p);
                     } catch (IOException e) {
                         throw new UncheckedIOException(e);
                     }
                 })
-                .reduce(IMappingFile::merge).orElse(IMappingBuilder.create("source", "target").build().getMap("source", "target"));
+                .toList());
         }
 
         @Override
@@ -156,10 +219,10 @@ public sealed interface MappingsSourceImpl {
         }
 
         @Override
-        public IMappingFile makeMappings(Context context) {
-            return sources.stream()
+        public MappingTree makeMappings(Context context) {
+            return MappingsUtil.merge(sources.stream()
                 .map(s -> s.makeMappings(context))
-                .reduce(IMappingFile::merge).orElse(IMappingBuilder.create("source", "target").build().getMap("source", "target"));
+                .toList());
         }
 
         @Override
@@ -182,9 +245,9 @@ public sealed interface MappingsSourceImpl {
         }
 
         @Override
-        public IMappingFile makeMappings(Context context) {
-            IMappingFile mappings = source.makeMappings(context);
-            return mappings.reverse();
+        public MappingTree makeMappings(Context context) {
+            MappingTree mappings = source.makeMappings(context);
+            return MappingsUtil.reverse(mappings);
         }
 
         @Override
@@ -205,32 +268,10 @@ public sealed interface MappingsSourceImpl {
         }
 
         @Override
-        public IMappingFile makeMappings(Context context) {
+        public MappingTree makeMappings(Context context) {
             try {
                 var path = input.path(context);
-                var extension = path.getFileName().toString().substring(path.getFileName().toString().lastIndexOf('.') + 1);
-                if ("zip".equals(extension) || "jar".equals(extension)) {
-                    // It's an archive file; let's open it and find the entry we need, if we can, saving it to a temp file
-                    try (var zip = new ZipFile(path.toFile())) {
-                        var tinyMappings = zip.getEntry("mappings/mappings.tiny");
-                        if (tinyMappings != null) {
-                            var tempFile = Files.createTempFile("crochet-extracted", ".tiny");
-                            try (var input = zip.getInputStream(tinyMappings)) {
-                                Files.copy(input, tempFile);
-                            }
-                            return IMappingFile.load(tempFile.toFile());
-                        }
-                        var parchmentJson = zip.getEntry("parchment.json");
-                        if (parchmentJson != null) {
-                            var tempFile = Files.createTempFile("crochet-extracted", ".json");
-                            try (var input = zip.getInputStream(parchmentJson)) {
-                                Files.copy(input, tempFile);
-                            }
-                            return IMappingFile.load(tempFile.toFile());
-                        }
-                    }
-                }
-                return IMappingFile.load(input.path(context).toFile());
+                return loadMappings(path);
             } catch (IOException e) {
                 throw new UncheckedIOException(e);
             }

@@ -8,8 +8,8 @@ import dev.lukebemish.taskgraphrunner.runtime.Task;
 import dev.lukebemish.taskgraphrunner.runtime.TaskInput;
 import dev.lukebemish.taskgraphrunner.runtime.execution.ToolDaemonExecutor;
 import dev.lukebemish.taskgraphrunner.runtime.mappings.MappingsSourceImpl;
+import dev.lukebemish.taskgraphrunner.runtime.mappings.ParchmentMappingWriter;
 import dev.lukebemish.taskgraphrunner.runtime.util.Tools;
-import net.neoforged.srgutils.IMappingFile;
 import org.jspecify.annotations.Nullable;
 
 import java.io.File;
@@ -117,14 +117,17 @@ public class JstTask extends Task {
             command.add("--enable-parchment");
             // Might eventually look at making this configurable
             command.add("--parchment-conflict-prefix=p");
-            var parchmentFile = workingDirectory.resolve("parchment.tsrg");
+            var parchmentFile = workingDirectory.resolve("parchment.json");
             var mappings = parchmentMappingsSource.makeMappings(context);
-            try {
-                mappings.write(parchmentFile, IMappingFile.Format.TSRG2, false);
+            try (var writer = Files.newBufferedWriter(parchmentFile, StandardCharsets.UTF_8);
+                 var mappingWriter = new ParchmentMappingWriter(writer)) {
+                mappingWriter.accept(mappings);
             } catch (IOException e) {
                 throw new UncheckedIOException(e);
             }
             command.add("--parchment-mappings="+parchmentFile.toAbsolutePath());
+            // Is this still necessary? Unclear, but javadoc don't seem to be working right
+            command.add("--parchment-javadoc=true");
         }
 
         for (int i = 0; i < args.size(); i++) {

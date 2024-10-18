@@ -185,13 +185,15 @@ public final class SingleVersionGenerator {
 
         // rename the merged jar
         config.tasks.add(new TaskModel.DownloadMappings("downloadClientMappings", new InputValue.DirectInput(new Value.StringValue("client")), new Input.TaskInput(new Output(downloadJsonName, "output"))));
+        boolean reverseMappings = true;
         Input mappingsTaskOutput;
         if (options.mappingsParameter != null) {
+            reverseMappings = false;
             mappingsTaskOutput = new Input.ParameterInput(options.mappingsParameter);
         } else {
             mappingsTaskOutput = new Input.TaskInput(new Output("downloadClientMappings", "output"));
         }
-        config.tasks.add(new TaskModel.DaemonExecutedTool(
+        var renameTask = new TaskModel.DaemonExecutedTool(
             "rename",
             List.of(
                 Argument.direct("--input"),
@@ -206,11 +208,15 @@ public final class SingleVersionGenerator {
                 Argument.direct("--ids-fix"),
                 Argument.direct("--src-fix"),
                 Argument.direct("--record-fix"),
-                Argument.direct("--unfinal-params"),
-                Argument.direct("--reverse")
+                Argument.direct("--unfinal-params")
             ),
             new Input.DirectInput(Value.tool("autorenamingtool"))
-        ));
+        );
+        config.tasks.add(renameTask);
+        if (reverseMappings) {
+            renameTask.args.add(Argument.direct("--reverse"));
+        }
+
 
         Output binariesTask = new Output("rename", "output");
 

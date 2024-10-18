@@ -7,6 +7,11 @@ public enum MappingsFormat {
     TSRG,
     TSRG2,
     PROGUARD,
-    TINY1,
-    TINY2;
+    TINY,
+    TINY2,
+    ENIGMA,
+    JAM,
+    RECAF,
+    JOBF,
+    PARCHMENT
 }

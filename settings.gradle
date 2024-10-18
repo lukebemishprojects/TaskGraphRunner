@@ -19,6 +19,13 @@ plugins {
 dependencyResolutionManagement {
     repositories {
         mavenCentral()
+        maven {
+            name 'ParchmentMC'
+            url 'https://maven.parchmentmc.org/'
+            content {
+                includeGroupAndSubgroups 'org.parchmentmc'
+            }
+        }
     }
 
     repositoriesMode = RepositoriesMode.FAIL_ON_PROJECT_REPOS
