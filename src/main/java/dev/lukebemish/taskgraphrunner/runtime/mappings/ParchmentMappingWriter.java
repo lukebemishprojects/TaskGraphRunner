@@ -2,6 +2,7 @@ package dev.lukebemish.taskgraphrunner.runtime.mappings;
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
+import com.google.gson.stream.JsonWriter;
 import net.fabricmc.mappingio.tree.MappingTree;
 import org.parchmentmc.feather.io.gson.MDCGsonAdapterFactory;
 import org.parchmentmc.feather.io.gson.SimpleVersionAdapter;
@@ -29,8 +30,8 @@ public class ParchmentMappingWriter implements MappingsSourceImpl.MappingConsume
 
     @Override
     public void close() throws IOException {
-        try {
-            writer.write(GSON.toJson(new ImmutableVersionedMappingDataContainer(VersionedMappingDataContainer.CURRENT_FORMAT, builder.getPackages(), builder.getClasses())));
+        try (var jsonWriter = new JsonWriter(writer)) {
+            GSON.getAdapter(VersionedMappingDataContainer.class).write(jsonWriter, new ImmutableVersionedMappingDataContainer(VersionedMappingDataContainer.CURRENT_FORMAT, builder.getPackages(), builder.getClasses()));
         } finally {
             writer.close();
         }
