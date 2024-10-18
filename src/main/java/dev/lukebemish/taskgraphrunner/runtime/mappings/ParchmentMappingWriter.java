@@ -5,8 +5,8 @@ import com.google.gson.GsonBuilder;
 import net.fabricmc.mappingio.tree.MappingTree;
 import org.parchmentmc.feather.io.gson.MDCGsonAdapterFactory;
 import org.parchmentmc.feather.io.gson.SimpleVersionAdapter;
+import org.parchmentmc.feather.mapping.ImmutableVersionedMappingDataContainer;
 import org.parchmentmc.feather.mapping.MappingDataBuilder;
-import org.parchmentmc.feather.mapping.VersionedMDCDelegate;
 import org.parchmentmc.feather.mapping.VersionedMappingDataContainer;
 import org.parchmentmc.feather.util.SimpleVersion;
 
@@ -16,7 +16,7 @@ import java.io.Writer;
 public class ParchmentMappingWriter implements MappingsSourceImpl.MappingConsumer {
     private static final Gson GSON = new GsonBuilder()
         .setPrettyPrinting()
-        .registerTypeAdapterFactory(new MDCGsonAdapterFactory(true))
+        .registerTypeAdapterFactory(new MDCGsonAdapterFactory())
         .registerTypeAdapter(SimpleVersion.class, new SimpleVersionAdapter())
         .create();
 
@@ -30,7 +30,7 @@ public class ParchmentMappingWriter implements MappingsSourceImpl.MappingConsume
     @Override
     public void close() throws IOException {
         try {
-            writer.write(GSON.toJson(new VersionedMDCDelegate<>(VersionedMappingDataContainer.CURRENT_FORMAT, builder)));
+            writer.write(GSON.toJson(new ImmutableVersionedMappingDataContainer(VersionedMappingDataContainer.CURRENT_FORMAT, builder.getPackages(), builder.getClasses())));
         } finally {
             writer.close();
         }
@@ -49,14 +49,16 @@ public class ParchmentMappingWriter implements MappingsSourceImpl.MappingConsume
             }
             boolean isPackage = dstName.endsWith("/package-info");
             if (isPackage) {
-                var packageBuilder = builder.createPackage(dstName.substring(0, dstName.length() - "/package-info".length()));
                 if (classMapping.getComment() != null) {
+                    var packageBuilder = builder.createPackage(dstName.substring(0, dstName.length() - "/package-info".length()));
                     packageBuilder.addJavadoc(classMapping.getComment().split("\n"));
                 }
             } else {
                 var classBuilder = builder.createClass(dstName);
+                boolean classHasDocs = false;
                 if (classMapping.getComment() != null) {
                     classBuilder.addJavadoc(classMapping.getComment().split("\n"));
+                    classHasDocs = true;
                 }
                 for (var method : classMapping.getMethods()) {
                     var methodDstName = method.getSrcName();
@@ -73,9 +75,12 @@ public class ParchmentMappingWriter implements MappingsSourceImpl.MappingConsume
                             dstDesc = method.getSrcDesc();
                         }
                     }
+                    boolean methodHasDocs = false;
                     var methodBuilder = classBuilder.createMethod(methodDstName, dstDesc);
                     if (method.getComment() != null) {
                         methodBuilder.addJavadoc(method.getComment().split("\n"));
+                        classHasDocs = true;
+                        methodHasDocs = true;
                     }
                     for (var arg : method.getArgs()) {
                         byte index = (byte) arg.getLvIndex();
@@ -88,13 +93,24 @@ public class ParchmentMappingWriter implements MappingsSourceImpl.MappingConsume
                                     argDstName = arg.getSrcName();
                                 }
                             }
+                            boolean argHasDocs = false;
                             if (argDstName != null) {
+                                methodHasDocs = true;
+                                argHasDocs = true;
                                 argBuilder.setName(argDstName);
                             }
                             if (arg.getComment() != null) {
+                                methodHasDocs = true;
+                                argHasDocs = true;
                                 argBuilder.addJavadoc(arg.getComment().split("\n"));
                             }
+                            if (!argHasDocs) {
+                                methodBuilder.removeParameter(index);
+                            }
                         }
+                    }
+                    if (!methodHasDocs) {
+                        classBuilder.removeMethod(methodDstName, dstDesc);
                     }
                 }
                 for (var field : classMapping.getFields()) {
@@ -112,10 +128,14 @@ public class ParchmentMappingWriter implements MappingsSourceImpl.MappingConsume
                             dstDesc = field.getSrcDesc();
                         }
                     }
-                    var fieldBuilder = classBuilder.createField(fieldDstName, dstDesc);
                     if (field.getComment() != null) {
+                        classHasDocs = true;
+                        var fieldBuilder = classBuilder.createField(fieldDstName, dstDesc);
                         fieldBuilder.addJavadoc(field.getComment().split("\n"));
                     }
+                }
+                if (!classHasDocs) {
+                    builder.removeClass(dstName);
                 }
             }
         }
