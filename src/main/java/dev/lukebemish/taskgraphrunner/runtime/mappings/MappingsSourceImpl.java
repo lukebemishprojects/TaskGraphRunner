@@ -13,6 +13,7 @@ import net.fabricmc.mappingio.format.MappingFormat;
 import net.fabricmc.mappingio.tree.MappingTree;
 import net.fabricmc.mappingio.tree.MemoryMappingTree;
 import net.fabricmc.mappingio.tree.VisitableMappingTree;
+import org.jspecify.annotations.Nullable;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
@@ -82,7 +83,7 @@ public sealed interface MappingsSourceImpl {
                 yield new ChainedFiles(counter.getAndIncrement(), new TaskInput.RecursiveFileListInput("chainedFiles" + counter.getAndIncrement(), filesParts));
             }
             case MappingsSource.File file ->
-                new FileSource(counter.getAndIncrement(), TaskInput.file("fileSource" + counter.getAndIncrement(), file.input, workItem, context, PathSensitivity.NONE));
+                new FileSource(counter.getAndIncrement(), TaskInput.file("fileSource" + counter.getAndIncrement(), file.input, workItem, context, PathSensitivity.NONE), file.extension == null ? null : TaskInput.value("fileSource"+counter.get()+"extension", file.extension, workItem));
             case MappingsSource.Merged merged ->
                 new MergedSource(counter.getAndIncrement(), merged.sources.stream().map(s -> of(s, workItem, context, counter)).toList());
             case MappingsSource.MergedFiles mergedFiles -> {
@@ -261,16 +262,30 @@ public sealed interface MappingsSourceImpl {
     final class FileSource implements MappingsSourceImpl {
         private final TaskInput.ValueInput label;
         private final TaskInput.HasFileInput input;
+        private final TaskInput.@Nullable ValueInput extension;
 
-        public FileSource(int andIncrement, TaskInput.HasFileInput input) {
+        public FileSource(int andIncrement, TaskInput.HasFileInput input, TaskInput.@Nullable ValueInput extension) {
             this.label = new TaskInput.ValueInput("fileLabel" + andIncrement, new Value.StringValue("file" + andIncrement));
             this.input = input;
+            this.extension = extension;
         }
 
         @Override
         public MappingTree makeMappings(Context context) {
             try {
                 var path = input.path(context);
+                if (extension != null) {
+                    var extensionObj = extension.value().value();
+                    if (extensionObj instanceof String extensionString) {
+                        var tempFile = Files.createTempFile("crochet-extracted", "." + extensionString);
+                        try (var input = Files.newInputStream(path)) {
+                            Files.copy(input, tempFile, StandardCopyOption.REPLACE_EXISTING);
+                        }
+                        path = tempFile;
+                    } else {
+                        throw new IllegalArgumentException("Extension value is not a string");
+                    }
+                }
                 return loadMappings(path);
             } catch (IOException e) {
                 throw new UncheckedIOException(e);
@@ -279,7 +294,11 @@ public sealed interface MappingsSourceImpl {
 
         @Override
         public List<TaskInput> inputs() {
-            return List.of(label, input);
+            if (extension == null) {
+                return List.of(label, input);
+            } else {
+                return List.of(label, input, extension);
+            }
         }
     }
 }

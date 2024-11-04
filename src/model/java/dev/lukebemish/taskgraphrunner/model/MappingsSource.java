@@ -6,6 +6,7 @@ import com.google.gson.annotations.JsonAdapter;
 import com.google.gson.reflect.TypeToken;
 import com.google.gson.stream.JsonReader;
 import com.google.gson.stream.JsonWriter;
+import org.jspecify.annotations.Nullable;
 
 import java.io.IOException;
 import java.util.ArrayList;
@@ -73,6 +74,7 @@ public sealed interface MappingsSource {
     @JsonAdapter(Adapter.class)
     final class File implements MappingsSource {
         public Input input;
+        public @Nullable InputValue extension;
 
         public File(Input input) {
             this.input = input;
@@ -87,7 +89,12 @@ public sealed interface MappingsSource {
             @Override
             public Function<Values, File> build(Builder<File> builder) {
                 var input = builder.field("input", source -> source.input, Input.class);
-                return values -> new File(values.get(input));
+                var extension = builder.field("extension", source -> source.extension, InputValue.class);
+                return values -> {
+                    var source = new File(values.get(input));
+                    source.extension = values.get(extension);
+                    return source;
+                };
             }
         }
     }
