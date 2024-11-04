@@ -26,6 +26,10 @@ public final class SingleVersionGenerator {
         private final Distribution distribution;
         private final @Nullable SidedAnnotation sidedAnnotation;
         private final @Nullable String mappingsParameter;
+        private final @Nullable Input versionJson;
+        private final @Nullable Input clientJar;
+        private final @Nullable Input serverJar;
+        private final @Nullable Input clientMappings;
 
         public enum SidedAnnotation implements Serializable {
             CPW("CPW"),
@@ -44,12 +48,16 @@ public final class SingleVersionGenerator {
             }
         }
 
-        private Options(@Nullable String accessTransformersParameter, @Nullable String injectedInterfacesParameter, Distribution distribution, @Nullable SidedAnnotation sidedAnnotation, @Nullable String mappingsParameter) {
+        private Options(@Nullable String accessTransformersParameter, @Nullable String injectedInterfacesParameter, Distribution distribution, @Nullable SidedAnnotation sidedAnnotation, @Nullable String mappingsParameter, @Nullable Input versionJson, @Nullable Input clientJar, @Nullable Input serverJar, @Nullable Input clientMappings) {
             this.accessTransformersParameter = accessTransformersParameter;
             this.injectedInterfacesParameter = injectedInterfacesParameter;
             this.distribution = distribution;
             this.sidedAnnotation = sidedAnnotation;
             this.mappingsParameter = mappingsParameter;
+            this.versionJson = versionJson;
+            this.clientJar = clientJar;
+            this.serverJar = serverJar;
+            this.clientMappings = clientMappings;
         }
 
         public static Builder builder() {
@@ -62,11 +70,35 @@ public final class SingleVersionGenerator {
             private Distribution distribution = Distribution.JOINED;
             private SidedAnnotation sidedAnnotation;
             private @Nullable String mappingsParameter = null;
+            private @Nullable Input versionJson = null;
+            private @Nullable Input clientJar = null;
+            private @Nullable Input serverJar = null;
+            private @Nullable Input clientMappings = null;
 
             private Builder() {}
 
             public Builder accessTransformersParameter(String accessTransformersParameter) {
                 this.accessTransformersParameter = accessTransformersParameter;
+                return this;
+            }
+
+            public Builder versionJson(Input versionJson) {
+                this.versionJson = versionJson;
+                return this;
+            }
+
+            public Builder clientJar(Input clientJar) {
+                this.clientJar = clientJar;
+                return this;
+            }
+
+            public Builder serverJar(Input serverJar) {
+                this.serverJar = serverJar;
+                return this;
+            }
+
+            public Builder clientMappings(Input clientMappings) {
+                this.clientMappings = clientMappings;
                 return this;
             }
 
@@ -91,7 +123,7 @@ public final class SingleVersionGenerator {
             }
 
             public Options build() {
-                return new Options(accessTransformersParameter, injectedInterfacesParameter, distribution, sidedAnnotation, mappingsParameter);
+                return new Options(accessTransformersParameter, injectedInterfacesParameter, distribution, sidedAnnotation, mappingsParameter, versionJson, clientJar, serverJar, clientMappings);
             }
         }
     }
@@ -99,32 +131,50 @@ public final class SingleVersionGenerator {
     public static Config convert(String version, Options options) throws IOException {
         var config = new Config();
 
-        var downloadManifestName = "downloadManifest";
-        var downloadJsonName = "downloadJson";
+        Input versionJson;
+        if (options.versionJson == null) {
+            var downloadManifestName = "downloadManifest";
+            var downloadJsonName = "downloadJson";
+            config.tasks.add(new TaskModel.DownloadManifest(downloadManifestName));
+            config.tasks.add(new TaskModel.DownloadJson(downloadJsonName, new InputValue.DirectInput(new Value.StringValue(version)), new Input.TaskInput(new Output(downloadManifestName, "output"))));
+            versionJson = new Input.TaskInput(new Output(downloadJsonName, "output"));
+        } else {
+            versionJson = options.versionJson;
+        }
         var listLibrariesName = "listLibraries";
-        config.tasks.add(new TaskModel.DownloadManifest(downloadManifestName));
-        config.tasks.add(new TaskModel.DownloadJson(downloadJsonName, new InputValue.DirectInput(new Value.StringValue(version)), new Input.TaskInput(new Output(downloadManifestName, "output"))));
-        config.tasks.add(new TaskModel.ListClasspath(listLibrariesName, new Input.TaskInput(new Output(downloadJsonName, "output")), null));
+        config.tasks.add(new TaskModel.ListClasspath(listLibrariesName, versionJson, null));
 
-        config.tasks.add(new TaskModel.DownloadAssets("downloadAssets", new Input.TaskInput(new Output(downloadJsonName, "output"))));
+        config.tasks.add(new TaskModel.DownloadAssets("downloadAssets", versionJson));
         config.aliases.put("assets", new Output("downloadAssets", "properties"));
 
         Output merged = switch (options.distribution) {
             case CLIENT -> {
-                config.tasks.add(new TaskModel.DownloadDistribution("downloadClient", new InputValue.DirectInput(new Value.StringValue("client")), new Input.TaskInput(new Output(downloadJsonName, "output"))));
+                Input clientJar;
+                if (options.clientJar == null) {
+                    config.tasks.add(new TaskModel.DownloadDistribution("downloadClient", new InputValue.DirectInput(new Value.StringValue("client")), versionJson));
+                    clientJar = new Input.TaskInput(new Output("downloadClient", "output"));
+                } else {
+                    clientJar = options.clientJar;
+                }
                 config.tasks.add(new TaskModel.SplitClassesResources(
                     "stripClient",
-                    new Input.TaskInput(new Output("downloadClient", "output")),
+                    clientJar,
                     null
                 ));
                 config.aliases.put("resources", new Output("stripClient", "resources"));
                 yield new Output("stripClient", "output");
             }
             case SERVER -> {
-                config.tasks.add(new TaskModel.DownloadDistribution("downloadServer", new InputValue.DirectInput(new Value.StringValue("server")), new Input.TaskInput(new Output(downloadJsonName, "output"))));
+                Input serverJar;
+                if (options.serverJar == null) {
+                    config.tasks.add(new TaskModel.DownloadDistribution("downloadServer", new InputValue.DirectInput(new Value.StringValue("server")), versionJson));
+                    serverJar = new Input.TaskInput(new Output("downloadServer", "output"));
+                } else {
+                    serverJar = options.serverJar;
+                }
                 config.tasks.add(new TaskModel.RetrieveData(
                     "extractServer",
-                    new Input.TaskInput(new Output("downloadServer", "output")),
+                    serverJar,
                     new InputValue.DirectInput(new Value.StringValue("META-INF/versions/"+version+"/server-"+version+".jar"))
                 ));
                 config.tasks.add(new TaskModel.SplitClassesResources(
@@ -136,16 +186,28 @@ public final class SingleVersionGenerator {
                 yield new Output("extractServer", "output");
             }
             case JOINED -> {
-                config.tasks.add(new TaskModel.DownloadDistribution("downloadClient", new InputValue.DirectInput(new Value.StringValue("client")), new Input.TaskInput(new Output(downloadJsonName, "output"))));
-                config.tasks.add(new TaskModel.DownloadDistribution("downloadServer", new InputValue.DirectInput(new Value.StringValue("server")), new Input.TaskInput(new Output(downloadJsonName, "output"))));
+                Input clientJar;
+                Input serverJar;
+                if (options.clientJar == null) {
+                    config.tasks.add(new TaskModel.DownloadDistribution("downloadClient", new InputValue.DirectInput(new Value.StringValue("client")), versionJson));
+                    clientJar = new Input.TaskInput(new Output("downloadClient", "output"));
+                } else {
+                    clientJar = options.clientJar;
+                }
+                if (options.serverJar == null) {
+                    config.tasks.add(new TaskModel.DownloadDistribution("downloadServer", new InputValue.DirectInput(new Value.StringValue("server")), versionJson));
+                    serverJar = new Input.TaskInput(new Output("downloadServer", "output"));
+                } else {
+                    serverJar = options.serverJar;
+                }
                 config.tasks.add(new TaskModel.RetrieveData(
                     "extractServer",
-                    new Input.TaskInput(new Output("downloadServer", "output")),
+                    serverJar,
                     new InputValue.DirectInput(new Value.StringValue("META-INF/versions/"+version+"/server-"+version+".jar"))
                 ));
                 config.tasks.add(new TaskModel.SplitClassesResources(
                     "stripClient",
-                    new Input.TaskInput(new Output("downloadClient", "output")),
+                    clientJar,
                     null
                 ));
                 config.tasks.add(new TaskModel.SplitClassesResources(
@@ -184,14 +246,20 @@ public final class SingleVersionGenerator {
         List<Output> additionalClasspath = new ArrayList<>();
 
         // rename the merged jar
-        config.tasks.add(new TaskModel.DownloadMappings("downloadClientMappings", new InputValue.DirectInput(new Value.StringValue("client")), new Input.TaskInput(new Output(downloadJsonName, "output"))));
+        Input downloadClientMappings;
+        if (options.clientMappings == null) {
+            config.tasks.add(new TaskModel.DownloadMappings("downloadClientMappings", new InputValue.DirectInput(new Value.StringValue("client")), versionJson));
+            downloadClientMappings = new Input.TaskInput(new Output("downloadClientMappings", "output"));
+        } else {
+            downloadClientMappings = options.clientMappings;
+        }
         boolean reverseMappings = true;
         Input mappingsTaskOutput;
         if (options.mappingsParameter != null) {
             reverseMappings = false;
             mappingsTaskOutput = new Input.ParameterInput(options.mappingsParameter);
         } else {
-            mappingsTaskOutput = new Input.TaskInput(new Output("downloadClientMappings", "output"));
+            mappingsTaskOutput = downloadClientMappings;
         }
         var renameTask = new TaskModel.DaemonExecutedTool(
             "rename",
@@ -216,7 +284,6 @@ public final class SingleVersionGenerator {
         if (reverseMappings) {
             renameTask.args.add(Argument.direct("--reverse"));
         }
-
 
         Output binariesTask = new Output("rename", "output");
 

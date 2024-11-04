@@ -1,6 +1,10 @@
 package dev.lukebemish.taskgraphrunner.runtime.mappings;
 
 import net.fabricmc.mappingio.MappedElementKind;
+import net.fabricmc.mappingio.MappingVisitor;
+import net.fabricmc.mappingio.adapter.MappingDstNsReorder;
+import net.fabricmc.mappingio.adapter.MappingNsRenamer;
+import net.fabricmc.mappingio.adapter.MappingSourceNsSwitch;
 import net.fabricmc.mappingio.tree.MappingTree;
 import net.fabricmc.mappingio.tree.MappingTreeView;
 import net.fabricmc.mappingio.tree.MemoryMappingTree;
@@ -11,9 +15,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Objects;
-import java.util.Optional;
-import java.util.Set;
+import java.util.Map;
 
 public final class MappingsUtil {
     private MappingsUtil() {}
@@ -23,172 +25,40 @@ public final class MappingsUtil {
             return tree;
         }
         var newTree = new MemoryMappingTree();
-        newTree.visitNamespaces("left", List.of("right"));
-        tree.getMetadata().forEach(entry -> newTree.visitMetadata(entry.getKey(), entry.getValue()));
-        tree.getClasses().forEach(classMapping -> {
-            var classDstName = classMapping.getDstName(0) == null ? classMapping.getSrcName() : classMapping.getDstName(0);
-            newTree.visitClass(classDstName);
-            newTree.visitDstName(MappedElementKind.CLASS, 0, classMapping.getSrcName());
-            if (classMapping.getComment() != null) {
-                newTree.visitComment(MappedElementKind.CLASS, classMapping.getComment());
-            }
-            classMapping.getFields().forEach(fieldMapping -> {
-                var fieldDstName = fieldMapping.getDstName(0) == null ? fieldMapping.getSrcName() : fieldMapping.getDstName(0);
-                // we need to remap the field descriptor to the new namespace
-                newTree.visitField(fieldDstName, tree.mapDesc(fieldMapping.getSrcDesc(), 0));
-                newTree.visitDstName(MappedElementKind.FIELD, 0, fieldMapping.getSrcName());
-                try {
-                    newTree.visitDstDesc(MappedElementKind.FIELD, 0, fieldMapping.getSrcDesc());
-                } catch (IOException e) {
-                    throw new UncheckedIOException(e);
-                }
-                if (fieldMapping.getComment() != null) {
-                    newTree.visitComment(MappedElementKind.FIELD, fieldMapping.getComment());
-                }
-            });
-            classMapping.getMethods().forEach(methodMapping -> {
-                var methodDstName = methodMapping.getDstName(0) == null ? methodMapping.getSrcName() : methodMapping.getDstName(0);
-                // we need to remap the method descriptor to the new namespace
-                newTree.visitMethod(methodDstName, tree.mapDesc(methodMapping.getSrcDesc(), 0));
-                newTree.visitDstName(MappedElementKind.METHOD, 0, methodMapping.getSrcName());
-                try {
-                    newTree.visitDstDesc(MappedElementKind.METHOD, 0, methodMapping.getSrcDesc());
-                } catch (IOException e) {
-                    throw new UncheckedIOException(e);
-                }
-                if (methodMapping.getComment() != null) {
-                    newTree.visitComment(MappedElementKind.METHOD, methodMapping.getComment());
-                }
-                for (var arg : methodMapping.getArgs()) {
-                    newTree.visitMethodArg(arg.getArgPosition(), arg.getLvIndex(), arg.getDstName(0));
-                    newTree.visitDstName(MappedElementKind.METHOD_ARG, 0, arg.getSrcName());
-                    if (arg.getComment() != null) {
-                        newTree.visitComment(MappedElementKind.METHOD_ARG, arg.getComment());
-                    }
-                }
-                for (var methodVar : methodMapping.getVars()) {
-                    newTree.visitMethodVar(methodVar.getLvtRowIndex(), methodVar.getLvIndex(), methodVar.getStartOpIdx(), methodVar.getEndOpIdx(), methodVar.getDstName(0));
-                    newTree.visitDstName(MappedElementKind.METHOD_VAR, 0, methodVar.getSrcName());
-                    if (methodVar.getComment() != null) {
-                        newTree.visitComment(MappedElementKind.METHOD_VAR, methodVar.getComment());
-                    }
-                }
-            });
-        });
-        newTree.visitEnd();
+        var reverser = new MappingSourceNsSwitch(newTree, tree.getDstNamespaces().getFirst());
+        try {
+            tree.accept(reverser);
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
         return newTree;
     }
 
     public static MappingTree merge(List<? extends MappingTreeView> trees) {
         var newTree = new MemoryMappingTree();
-        newTree.visitNamespaces("left", List.of("right"));
         for (var tree : trees) {
-            tree.getMetadata().reversed().forEach(entry -> newTree.visitMetadata(entry.getKey(), entry.getValue()));
+            Map<String, String> rename = new LinkedHashMap<>();
+            rename.put(tree.getSrcNamespace(), "left");
+            if (!tree.getDstNamespaces().isEmpty()) {
+                rename.put(tree.getDstNamespaces().getFirst(), "right");
+            }
+            MappingVisitor visitor = new MappingNsRenamer(newTree, rename);
+            if (!tree.getDstNamespaces().isEmpty()) {
+                visitor = new MappingDstNsReorder(visitor, List.of("right"));
+            }
+            try {
+                tree.accept(visitor);
+            } catch (IOException e) {
+                throw new UncheckedIOException(e);
+            }
         }
-        var classSrcNames = new LinkedHashSet<>(trees.stream().flatMap(tree -> tree.getClasses().stream().map(MappingTreeView.ElementMappingView::getSrcName)).toList());
-        for (var classSrcName : classSrcNames) {
-            var classes = trees.stream().map(tree -> tree.getClass(classSrcName)).filter(Objects::nonNull).toList();
-            if (classes.isEmpty()) {
-                continue;
-            }
-            newTree.visitClass(classSrcName);
-            newTree.visitDstName(MappedElementKind.CLASS, 0, classes.stream().map(cl -> cl.getDstName(0)).filter(Objects::nonNull).findFirst().orElse(classSrcName));
-            classes.stream().map(MappingTreeView.ElementMappingView::getComment).filter(Objects::nonNull).findFirst()
-                .ifPresent(comment -> newTree.visitComment(MappedElementKind.CLASS, comment));
-            var fieldSrcNames = new LinkedHashSet<>(classes.stream().flatMap(cl -> cl.getFields().stream().map(MappingTreeView.ElementMappingView::getSrcName)).toList());
-            for (var fieldSrcName : fieldSrcNames) {
-                var fields = classes.stream().map(cl -> cl.getField(fieldSrcName, null)).filter(Objects::nonNull).toList();
-                var fieldSrcDsc = fields.stream().map(MappingTreeView.MemberMappingView::getSrcDesc).filter(Objects::nonNull).findFirst().orElse(null);
-                if (fields.isEmpty()) {
-                    continue;
-                }
-                newTree.visitField(fieldSrcName, fieldSrcDsc);
-                newTree.visitDstName(MappedElementKind.FIELD, 0, fields.stream().map(field -> field.getDstName(0)).filter(Objects::nonNull).findFirst().orElse(fieldSrcName));
-                try {
-                    newTree.visitDstDesc(MappedElementKind.FIELD, 0, fields.stream().map(field -> field.getDstDesc(0)).filter(Objects::nonNull).findFirst().orElse(fieldSrcDsc));
-                } catch (IOException e) {
-                    throw new UncheckedIOException(e);
-                }
-                fields.stream().map(MappingTreeView.ElementMappingView::getComment).filter(Objects::nonNull).findFirst()
-                    .ifPresent(comment -> newTree.visitComment(MappedElementKind.FIELD, comment));
-            }
-            var visitedMethods = new LinkedHashMap<String, Set<String>>();
-            for (var classTree : classes) {
-                for (var method : classTree.getMethods()) {
-                    var set = visitedMethods.computeIfAbsent(method.getSrcName(), k -> new LinkedHashSet<>());
-                    if (method.getSrcDesc() != null) {
-                        set.add(method.getSrcDesc());
-                    }
-                }
-            }
-            visitedMethods.forEach((srcMethodName, methodDescs) -> methodDescs.forEach(srcMethodDesc -> {
-                var methods = classes.stream().map(cl -> cl.getMethod(srcMethodName, srcMethodDesc)).filter(Objects::nonNull).toList();
-                if (methods.isEmpty()) {
-                    return;
-                }
-                newTree.visitMethod(srcMethodName, srcMethodDesc);
-                newTree.visitDstName(MappedElementKind.METHOD, 0, methods.stream().map(method -> method.getDstName(0)).filter(Objects::nonNull).findFirst().orElse(srcMethodName));
-                try {
-                    newTree.visitDstDesc(MappedElementKind.METHOD, 0, methods.stream().map(method -> method.getDstDesc(0)).filter(Objects::nonNull).findFirst().orElse(srcMethodDesc));
-                } catch (IOException e) {
-                    throw new UncheckedIOException(e);
-                }
-                methods.stream().map(MappingTreeView.ElementMappingView::getComment).filter(Objects::nonNull).findFirst()
-                    .ifPresent(comment -> newTree.visitComment(MappedElementKind.METHOD, comment));
-                Set<Integer> visitedArgs = new LinkedHashSet<>();
-                for (var method : methods) {
-                    // We only do anything with the lvt index -- it's what the parchment format and tiny use, and it's what mapping-io has TSRG use even though, it seems, TSRG might actually use the parameter index
-                    method.getArgs().forEach(arg -> {
-                        if (arg.getLvIndex() >= 0) {
-                            visitedArgs.add(arg.getLvIndex());
-                        }
-                    });
-                }
-                for (int argIndex : visitedArgs) {
-                    var args = methods.stream().map(method -> method.getArg(-1, argIndex, null)).filter(Objects::nonNull).toList();
-                    if (args.isEmpty()) {
-                        continue;
-                    }
-                    var argSrcName = args.stream().map(MappingTreeView.ElementMappingView::getSrcName).filter(Objects::nonNull).findFirst().orElse(null);
-                    newTree.visitMethodArg(argIndex, argIndex, argSrcName);
-                    args.stream().map(arg -> arg.getDstName(0)).filter(Objects::nonNull).findFirst().or(() -> Optional.ofNullable(argSrcName))
-                        .ifPresent(argDstName -> newTree.visitDstName(MappedElementKind.METHOD_ARG, 0, argDstName));
-                    args.stream().map(MappingTreeView.ElementMappingView::getComment).filter(Objects::nonNull).findFirst()
-                        .ifPresent(comment -> newTree.visitComment(MappedElementKind.METHOD_ARG, comment));
-                }
-                Set<LVTIdentifier> visitedVars = new LinkedHashSet<>();
-                for (var method : methods) {
-                    method.getVars().forEach(var -> {
-                        if (var.getLvIndex() >= 0 && var.getStartOpIdx() >= 0) {
-                            visitedVars.add(new LVTIdentifier(var.getLvIndex(), var.getStartOpIdx()));
-                        }
-                    });
-                }
-                for (var lvtIdentifier : visitedVars) {
-                    var lvIndex = lvtIdentifier.lvIndex;
-                    var startOpIdx = lvtIdentifier.startOpIdx;
-                    var vars = methods.stream().map(method -> method.getVar(-1, lvIndex, startOpIdx, -1, null)).filter(Objects::nonNull).toList();
-                    if (vars.isEmpty()) {
-                        continue;
-                    }
-                    var varSrcName = vars.stream().map(MappingTreeView.ElementMappingView::getSrcName).filter(Objects::nonNull).findFirst().orElse(null);
-                    var lvtRowIndex = vars.stream().map(MappingTreeView.MethodVarMappingView::getLvtRowIndex).filter(i -> i >= 0).findFirst().orElse(-1);
-                    var endOpIdx = vars.stream().map(MappingTreeView.MethodVarMappingView::getEndOpIdx).filter(i -> i >= 0).findFirst().orElse(-1);
-                    newTree.visitMethodVar(lvtRowIndex, lvIndex, startOpIdx, endOpIdx, varSrcName);
-                    vars.stream().map(var -> var.getDstName(0)).filter(Objects::nonNull).findFirst().or(() -> Optional.ofNullable(varSrcName))
-                        .ifPresent(varDstName -> newTree.visitDstName(MappedElementKind.METHOD_VAR, 0, varDstName));
-                    vars.stream().map(MappingTreeView.ElementMappingView::getComment).filter(Objects::nonNull).findFirst()
-                        .ifPresent(comment -> newTree.visitComment(MappedElementKind.METHOD_VAR, comment));
-                }
-            }));
-        }
-        newTree.visitEnd();
         return newTree;
     }
 
     private record LVTIdentifier(int lvIndex, int startOpIdx) {}
 
     public static MappingTree chain(List<? extends MappingTreeView> mappingTrees) {
+        // Seemingly no better way to do this -- especially as intermediary mappings may be missing stuff
         var newTree = new MemoryMappingTree();
         newTree.visitNamespaces("left", List.of("right"));
         for (var tree : mappingTrees) {
