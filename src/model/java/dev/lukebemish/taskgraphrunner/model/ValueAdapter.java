@@ -22,7 +22,7 @@ final class ValueAdapter extends GsonAdapter<Value> {
             case Value.ListValue listValue -> {
                 out.beginArray();
                 if (listValue.listOrdering() == ListOrdering.CONTENTS) {
-                    out.value(ORDER_BY_CONTENTS +listValue.listOrdering().name());
+                    out.value(ORDER_BY_CONTENTS);
                 }
                 for (var v : listValue.value()) {
                     write(out, v);
