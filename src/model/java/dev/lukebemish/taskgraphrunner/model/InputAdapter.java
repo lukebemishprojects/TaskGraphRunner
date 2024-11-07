@@ -31,11 +31,26 @@ final class InputAdapter extends GsonAdapter<Input> {
             case Input.TaskInput taskInput ->
                 out.value("task." + taskInput.output().taskName() + "." + taskInput.output().name());
             case Input.ListInput listInput -> {
-                out.beginArray();
-                for (var i : listInput.inputs()) {
-                    write(out, i);
+                if (listInput.listContentsHashStrategy() == ListContentsHashStrategy.ORIGINAL) {
+                    out.beginArray();
+                    for (var i : listInput.inputs()) {
+                        write(out, i);
+                    }
+                    out.endArray();
+                } else {
+                    out.beginObject();
+                    out.name("type");
+                    out.value("list");
+                    out.name("value");
+                    out.beginArray();
+                    for (var i : listInput.inputs()) {
+                        write(out, i);
+                    }
+                    out.endArray();
+                    out.name("listContentsHashStrategy");
+                    GSON.getAdapter(ListContentsHashStrategy.class).write(out, listInput.listContentsHashStrategy());
+                    out.endObject();
                 }
-                out.endArray();
             }
         }
     }
@@ -86,7 +101,11 @@ final class InputAdapter extends GsonAdapter<Input> {
                 for (var element : value.getAsJsonArray()) {
                     inputs.add(GSON.fromJson(element, Input.class));
                 }
-                yield new Input.ListInput(inputs);
+                if (!object.has("listContentsHashStrategy")) {
+                    yield new Input.ListInput(inputs);
+                }
+                var listContentsHashStrategy = GSON.fromJson(object.get("listContentsHashStrategy"), ListContentsHashStrategy.class);
+                yield new Input.ListInput(inputs, listContentsHashStrategy);
             }
             default -> throw new IllegalArgumentException("Invalid input type: " + type);
         };

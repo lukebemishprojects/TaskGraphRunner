@@ -16,5 +16,9 @@ public sealed interface Input {
     record DirectInput(Value value) implements Input {}
 
     @JsonAdapter(InputAdapter.class)
-    record ListInput(List<Input> inputs) implements Input {}
+    record ListInput(List<Input> inputs, ListContentsHashStrategy listContentsHashStrategy) implements Input {
+        public ListInput(List<Input> inputs) {
+            this(inputs, ListContentsHashStrategy.ORIGINAL);
+        }
+    }
 }

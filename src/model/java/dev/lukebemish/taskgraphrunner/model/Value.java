@@ -20,7 +20,11 @@ public sealed interface Value {
     record BooleanValue(Boolean value) implements Value {}
 
     @JsonAdapter(ValueAdapter.class)
-    record ListValue(List<Value> value) implements Value {}
+    record ListValue(List<Value> value, ListContentsHashStrategy listContentsHashStrategy) implements Value {
+        public ListValue(List<Value> value) {
+            this(value, ListContentsHashStrategy.ORIGINAL);
+        }
+    }
 
     @JsonAdapter(ValueAdapter.class)
     record MapValue(Map<String, Value> value) implements Value {}

@@ -11,6 +11,8 @@ import java.util.List;
 import java.util.Map;
 
 final class ValueAdapter extends GsonAdapter<Value> {
+    private static final String ORDER_BY_CONTENTS = "__taskgraphrunner.listContentsHashStrategy."+ ListContentsHashStrategy.CONTENTS.name()+"__";
+
     @Override
     public void write(JsonWriter out, Value value) throws IOException {
         switch (value) {
@@ -19,6 +21,9 @@ final class ValueAdapter extends GsonAdapter<Value> {
             case Value.StringValue stringValue -> out.value(stringValue.value());
             case Value.ListValue listValue -> {
                 out.beginArray();
+                if (listValue.listContentsHashStrategy() == ListContentsHashStrategy.CONTENTS) {
+                    out.value(ORDER_BY_CONTENTS +listValue.listContentsHashStrategy().name());
+                }
                 for (var v : listValue.value()) {
                     write(out, v);
                 }
@@ -44,11 +49,20 @@ final class ValueAdapter extends GsonAdapter<Value> {
             case BEGIN_ARRAY -> {
                 in.beginArray();
                 List<Value> list = new ArrayList<>();
+                ListContentsHashStrategy listContentsHashStrategy = ListContentsHashStrategy.ORIGINAL;
+                if (in.hasNext()) {
+                    var value = read(in);
+                    if (value instanceof Value.StringValue stringValue && stringValue.value().equals(ORDER_BY_CONTENTS)) {
+                        listContentsHashStrategy = ListContentsHashStrategy.CONTENTS;
+                    } else {
+                        list.add(value);
+                    }
+                }
                 while (in.hasNext()) {
                     list.add(read(in));
                 }
                 in.endArray();
-                yield new Value.ListValue(list);
+                yield new Value.ListValue(list, listContentsHashStrategy);
             }
             case BEGIN_OBJECT -> {
                 in.beginObject();
