@@ -1,6 +1,6 @@
 package dev.lukebemish.taskgraphrunner.model;
 
-public enum ListContentsHashStrategy {
+public enum ListOrdering {
     ORIGINAL,
     CONTENTS
 }

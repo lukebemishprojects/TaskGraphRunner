@@ -11,7 +11,7 @@ import java.util.List;
 import java.util.Map;
 
 final class ValueAdapter extends GsonAdapter<Value> {
-    private static final String ORDER_BY_CONTENTS = "__taskgraphrunner.listContentsHashStrategy."+ ListContentsHashStrategy.CONTENTS.name()+"__";
+    private static final String ORDER_BY_CONTENTS = "__taskgraphrunner.listOrdering."+ ListOrdering.CONTENTS.name()+"__";
 
     @Override
     public void write(JsonWriter out, Value value) throws IOException {
@@ -21,8 +21,8 @@ final class ValueAdapter extends GsonAdapter<Value> {
             case Value.StringValue stringValue -> out.value(stringValue.value());
             case Value.ListValue listValue -> {
                 out.beginArray();
-                if (listValue.listContentsHashStrategy() == ListContentsHashStrategy.CONTENTS) {
-                    out.value(ORDER_BY_CONTENTS +listValue.listContentsHashStrategy().name());
+                if (listValue.listOrdering() == ListOrdering.CONTENTS) {
+                    out.value(ORDER_BY_CONTENTS +listValue.listOrdering().name());
                 }
                 for (var v : listValue.value()) {
                     write(out, v);
@@ -49,11 +49,11 @@ final class ValueAdapter extends GsonAdapter<Value> {
             case BEGIN_ARRAY -> {
                 in.beginArray();
                 List<Value> list = new ArrayList<>();
-                ListContentsHashStrategy listContentsHashStrategy = ListContentsHashStrategy.ORIGINAL;
+                ListOrdering listOrdering = ListOrdering.ORIGINAL;
                 if (in.hasNext()) {
                     var value = read(in);
                     if (value instanceof Value.StringValue stringValue && stringValue.value().equals(ORDER_BY_CONTENTS)) {
-                        listContentsHashStrategy = ListContentsHashStrategy.CONTENTS;
+                        listOrdering = ListOrdering.CONTENTS;
                     } else {
                         list.add(value);
                     }
@@ -62,7 +62,7 @@ final class ValueAdapter extends GsonAdapter<Value> {
                     list.add(read(in));
                 }
                 in.endArray();
-                yield new Value.ListValue(list, listContentsHashStrategy);
+                yield new Value.ListValue(list, listOrdering);
             }
             case BEGIN_OBJECT -> {
                 in.beginObject();

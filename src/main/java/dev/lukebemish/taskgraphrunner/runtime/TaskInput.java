@@ -3,9 +3,9 @@ package dev.lukebemish.taskgraphrunner.runtime;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
-import dev.lukebemish.taskgraphrunner.model.ListContentsHashStrategy;
 import dev.lukebemish.taskgraphrunner.model.Input;
 import dev.lukebemish.taskgraphrunner.model.InputValue;
+import dev.lukebemish.taskgraphrunner.model.ListOrdering;
 import dev.lukebemish.taskgraphrunner.model.PathSensitivity;
 import dev.lukebemish.taskgraphrunner.model.Value;
 import dev.lukebemish.taskgraphrunner.model.WorkItem;
@@ -252,7 +252,7 @@ public sealed interface TaskInput extends RecordedInput {
         }
     }
 
-    record SimpleFileListInput(String name, List<HasFileInput> inputs, ListContentsHashStrategy listContentsHashStrategy) implements FileListInput {
+    record SimpleFileListInput(String name, List<HasFileInput> inputs, ListOrdering listOrdering) implements FileListInput {
         @Override
         public void hashReference(ByteConsumer digest, Context context) {
             ByteBuffer buffer = ByteBuffer.allocate(Integer.BYTES);
@@ -268,7 +268,7 @@ public sealed interface TaskInput extends RecordedInput {
             ByteBuffer buffer = ByteBuffer.allocate(Integer.BYTES);
             buffer.putInt(inputs.size());
             digest.update(buffer);
-            switch (listContentsHashStrategy) {
+            switch (listOrdering) {
                 case ORIGINAL -> {
                     for (HasFileInput input : inputs) {
                         input.hashContents(digest, context);
@@ -300,7 +300,17 @@ public sealed interface TaskInput extends RecordedInput {
 
         @Override
         public List<Path> paths(Context context) {
-            return inputs.stream().map(input -> input.path(context)).toList();
+            var stream = inputs.stream().map(input -> input.path(context));
+            if (listOrdering == ListOrdering.CONTENTS) {
+                stream = stream.sorted((a, b) -> {
+                    var aOutput = new ByteArrayOutputStream();
+                    HashUtils.hash(a, ByteConsumer.of(aOutput));
+                    var bOutput = new ByteArrayOutputStream();
+                    HashUtils.hash(b, ByteConsumer.of(bOutput));
+                    return Arrays.compare(aOutput.toByteArray(), bOutput.toByteArray());
+                });
+            }
+            return stream.toList();
         }
 
         @Override
@@ -379,7 +389,7 @@ public sealed interface TaskInput extends RecordedInput {
                 for (int i = 0; i < listInput.inputs().size(); i++) {
                     fileInputs.add(file(name + "_" + i, listInput.inputs().get(i), workItem, context, pathSensitivity));
                 }
-                yield new SimpleFileListInput(name, fileInputs, listInput.listContentsHashStrategy());
+                yield new SimpleFileListInput(name, fileInputs, listInput.listOrdering());
             }
         };
     }
@@ -400,7 +410,7 @@ public sealed interface TaskInput extends RecordedInput {
                     throw new IllegalArgumentException("Array parameter `"+ parameterInput.parameter()+"` contains non-string value at index "+i);
                 }
             }
-            return new SimpleFileListInput(name, inputs, listValue.listContentsHashStrategy());
+            return new SimpleFileListInput(name, inputs, listValue.listOrdering());
         } else if (value != null) {
             if (parameterInput == null) {
                 throw new IllegalArgumentException("Value is not a string or list of strings");
