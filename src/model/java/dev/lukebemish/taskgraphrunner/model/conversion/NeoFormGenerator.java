@@ -19,8 +19,10 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 
@@ -34,14 +36,24 @@ public final class NeoFormGenerator {
         private final boolean recompile;
         private final boolean fixLineNumbers;
         private final Distribution distribution;
+        private final @Nullable Input versionJson;
+        private final @Nullable Input clientJar;
+        private final @Nullable Input serverJar;
+        private final @Nullable Input clientMappings;
+        private final @Nullable Input serverMappings;
 
-        private Options(@Nullable String accessTransformersParameter, @Nullable String injectedInterfacesParameter, @Nullable String parchmentDataParameter, boolean recompile, boolean fixLineNumbers, Distribution distribution) {
+        private Options(@Nullable String accessTransformersParameter, @Nullable String injectedInterfacesParameter, @Nullable String parchmentDataParameter, boolean recompile, boolean fixLineNumbers, Distribution distribution, @Nullable Input versionJson, @Nullable Input clientJar, @Nullable Input serverJar, @Nullable Input clientMappings, @Nullable Input serverMappings) {
             this.accessTransformersParameter = accessTransformersParameter;
             this.injectedInterfacesParameter = injectedInterfacesParameter;
             this.parchmentDataParameter = parchmentDataParameter;
             this.recompile = recompile;
             this.fixLineNumbers = fixLineNumbers;
             this.distribution = distribution;
+            this.versionJson = versionJson;
+            this.clientJar = clientJar;
+            this.serverJar = serverJar;
+            this.clientMappings = clientMappings;
+            this.serverMappings = serverMappings;
         }
 
         public static Builder builder() {
@@ -55,8 +67,38 @@ public final class NeoFormGenerator {
             private boolean recompile = true;
             private boolean fixLineNumbers = false;
             private Distribution distribution = Distribution.JOINED;
+            private @Nullable Input versionJson = null;
+            private @Nullable Input clientJar = null;
+            private @Nullable Input serverJar = null;
+            private @Nullable Input clientMappings = null;
+            private @Nullable Input serverMappings = null;
 
             private Builder() {}
+
+            public Builder versionJson(Input versionJson) {
+                this.versionJson = versionJson;
+                return this;
+            }
+
+            public Builder clientJar(Input clientJar) {
+                this.clientJar = clientJar;
+                return this;
+            }
+
+            public Builder serverJar(Input serverJar) {
+                this.serverJar = serverJar;
+                return this;
+            }
+
+            public Builder clientMappings(Input clientMappings) {
+                this.clientMappings = clientMappings;
+                return this;
+            }
+
+            public Builder serverMappings(Input serverMappings) {
+                this.serverMappings = serverMappings;
+                return this;
+            }
 
             public Builder accessTransformersParameter(String accessTransformersParameter) {
                 this.accessTransformersParameter = accessTransformersParameter;
@@ -89,7 +131,7 @@ public final class NeoFormGenerator {
             }
 
             public Options build() {
-                return new Options(accessTransformersParameter, injectedInterfacesParameter, parchmentDataParameter, recompile, fixLineNumbers, distribution);
+                return new Options(accessTransformersParameter, injectedInterfacesParameter, parchmentDataParameter, recompile, fixLineNumbers, distribution, versionJson, clientJar, serverJar, clientMappings, serverMappings);
             }
         }
     }
@@ -143,15 +185,14 @@ public final class NeoFormGenerator {
             ));
         }
 
-        var downloadManifestName = "downloadManifest";
-        var downloadJsonName = "downloadJson";
+        Input downloadManifestInput = new Input.TaskInput(new Output("downloadManifest", "output"));
+        Input downloadJsonInput = options.versionJson == null ? new Input.TaskInput(new Output("downloadJson", "output")) : options.versionJson;
         var listLibrariesName = "listLibraries";
         var stripTasks = new ArrayList<String>();
 
         for (var step : source.steps().getOrDefault(distribution, List.of())) {
             switch (step.type()) {
-                case "downloadManifest" -> downloadManifestName = step.name();
-                case "downloadJson" -> downloadJsonName = step.name();
+                case "downloadManifest" -> downloadManifestInput = new Input.TaskInput(new Output(step.name(), "output"));
                 case "listLibraries" -> listLibrariesName = step.name();
                 case "strip" -> stripTasks.add(step.name());
                 default -> {}
@@ -161,48 +202,99 @@ public final class NeoFormGenerator {
         Output patches = null;
         Output vineflowerOutput = null;
 
+        Map<String, Input> downloadInputs = new HashMap<>();
+
+        for (var step : source.steps().getOrDefault(distribution, List.of())) {
+            switch (step.type()) {
+                case "downloadManifest" -> {
+                    config.tasks.add(new TaskModel.DownloadManifest(step.name()));
+                }
+                case "downloadJson" -> {
+                    if (options.versionJson != null) {
+                        downloadInputs.put(step.name(), options.versionJson);
+                    } else {
+                        var task = new TaskModel.DownloadJson(
+                            step.name(),
+                            new InputValue.DirectInput(new Value.StringValue(source.version())),
+                            downloadManifestInput
+                        );
+                        downloadInputs.put(step.name(), new Input.TaskInput(new Output(step.name(), "output")));
+                        config.tasks.add(task);
+                    }
+                }
+                case "downloadClient" -> {
+                    if (options.clientJar != null) {
+                        downloadInputs.put(step.name(), options.clientJar);
+                    } else {
+                        var task = new TaskModel.DownloadDistribution(
+                            step.name(),
+                            new InputValue.DirectInput(new Value.StringValue("client")),
+                            downloadJsonInput
+                        );
+                        downloadInputs.put(step.name(), new Input.TaskInput(new Output(step.name(), "output")));
+                        config.tasks.add(task);
+                    }
+                }
+                case "downloadServer" -> {
+                    if (options.serverJar != null) {
+                        downloadInputs.put(step.name(), options.serverJar);
+                    } else {
+                        var task = new TaskModel.DownloadDistribution(
+                            step.name(),
+                            new InputValue.DirectInput(new Value.StringValue("server")),
+                            downloadJsonInput
+                        );
+                        downloadInputs.put(step.name(), new Input.TaskInput(new Output(step.name(), "output")));
+                        config.tasks.add(task);
+                    }
+                }
+                case "downloadClientMappings" -> {
+                    if (options.clientMappings != null) {
+                        downloadInputs.put(step.name(), options.clientMappings);
+                    } else {
+                        var task = new TaskModel.DownloadMappings(
+                            step.name(),
+                            new InputValue.DirectInput(new Value.StringValue("client")),
+                            downloadJsonInput
+                        );
+                        downloadInputs.put(step.name(), new Input.TaskInput(new Output(step.name(), "output")));
+                        config.tasks.add(task);
+                    }
+                }
+                case "downloadServerMappings" -> {
+                    if (options.serverMappings != null) {
+                        downloadInputs.put(step.name(), options.serverMappings);
+                    } else {
+                        var task = new TaskModel.DownloadMappings(
+                            step.name(),
+                            new InputValue.DirectInput(new Value.StringValue("server")),
+                            downloadJsonInput
+                        );
+                        downloadInputs.put(step.name(), new Input.TaskInput(new Output(step.name(), "output")));
+                        config.tasks.add(task);
+                    }
+                }
+                default -> {}
+            }
+        }
+
         for (var step : source.steps().getOrDefault(distribution, List.of())) {
             var task = switch (step.type()) {
-                case "downloadManifest" -> new TaskModel.DownloadManifest(step.name());
-                case "downloadJson" -> new TaskModel.DownloadJson(
-                    step.name(),
-                    new InputValue.DirectInput(new Value.StringValue(source.version())),
-                    new Input.TaskInput(new Output(downloadManifestName, "output"))
-                );
-                case "downloadClient" -> new TaskModel.DownloadDistribution(
-                    step.name(),
-                    new InputValue.DirectInput(new Value.StringValue("client")),
-                    new Input.TaskInput(new Output(downloadJsonName, "output"))
-                );
-                case "downloadServer" -> new TaskModel.DownloadDistribution(
-                    step.name(),
-                    new InputValue.DirectInput(new Value.StringValue("server")),
-                    new Input.TaskInput(new Output(downloadJsonName, "output"))
-                );
-                case "downloadClientMappings" -> new TaskModel.DownloadMappings(
-                    step.name(),
-                    new InputValue.DirectInput(new Value.StringValue("client")),
-                    new Input.TaskInput(new Output(downloadJsonName, "output"))
-                );
-                case "downloadServerMappings" -> new TaskModel.DownloadMappings(
-                    step.name(),
-                    new InputValue.DirectInput(new Value.StringValue("server")),
-                    new Input.TaskInput(new Output(downloadJsonName, "output"))
-                );
+                case "downloadManifest", "downloadJson", "downloadClient", "downloadServer", "downloadClientMappings", "downloadServerMappings" -> null;
                 case "strip" -> new TaskModel.SplitClassesResources(
                     step.name(),
-                    parseStepInput(step, "input"),
+                    parseStepInput(downloadInputs, step, "input"),
                     null
                 );
                 case "listLibraries" -> new TaskModel.ListClasspath(
                     step.name(),
-                    new Input.TaskInput(new Output(downloadJsonName, "output")),
+                    downloadJsonInput,
                     new InputValue.ParameterInput("additionalLibraries")
                 );
                 case "inject" -> new TaskModel.InjectSources(
                     step.name(),
                     List.of(
-                        parseStepInput(step, "input"),
+                        parseStepInput(downloadInputs, step, "input"),
                         new Input.TaskInput(new Output("generated_retrieve_inject", "output"))
                     )
                 );
@@ -210,7 +302,7 @@ public final class NeoFormGenerator {
                     patches = new Output("generated_retrieve_patches", "output");
                     yield new TaskModel.PatchSources(
                         step.name(),
-                        parseStepInput(step, "input"),
+                        parseStepInput(downloadInputs, step, "input"),
                         new Input.TaskInput(new Output("generated_retrieve_patches", "output"))
                     );
                 }
@@ -226,7 +318,7 @@ public final class NeoFormGenerator {
                         tool = toolModel = new TaskModel.Tool(step.name(), List.of());
 
                         for (var arg : function.jvmArgs()) {
-                            toolModel.args.add(processArgument(arg, step, source, listLibrariesName));
+                            toolModel.args.add(processArgument(downloadInputs, arg, step, source, listLibrariesName));
                         }
 
                         toolModel.args.add(new Argument.ValueInput(null, new InputValue.DirectInput(new Value.StringValue("-jar"))));
@@ -238,7 +330,7 @@ public final class NeoFormGenerator {
                         args = toolModel.args;
                     }
                     for (var arg : function.args()) {
-                        args.add(processArgument(arg, step, source, listLibrariesName));
+                        args.add(processArgument(downloadInputs, arg, step, source, listLibrariesName));
                     }
 
                     if (isVineflower(function)) {
@@ -259,10 +351,12 @@ public final class NeoFormGenerator {
                     yield tool;
                 }
             };
-            config.tasks.add(task);
+            if (task != null) {
+                config.tasks.add(task);
+            }
         }
 
-        config.tasks.add(new TaskModel.DownloadAssets("downloadAssets", new Input.TaskInput(new Output(downloadJsonName, "output"))));
+        config.tasks.add(new TaskModel.DownloadAssets("downloadAssets", downloadJsonInput));
         config.aliases.put("assets", new Output("downloadAssets", "properties"));
 
         Output sourcesTask = new Output("patch", "output");
@@ -332,6 +426,9 @@ public final class NeoFormGenerator {
             binariesTask = new Output("interfaceInjection", "output");
         }
 
+        // Capture this without line number modification if possible
+        config.aliases.put("binarySourceIndependent", binariesTask);
+
         if (options.fixLineNumbers) {
             if (options.recompile) {
                 throw new IllegalArgumentException("Cannot fix line numbers and recompile in the same neoform task graph -- binary output would be ambiguous");
@@ -370,14 +467,14 @@ public final class NeoFormGenerator {
         // merge resources
         config.tasks.add(new TaskModel.InjectSources(
             "mergedResources",
-            stripTasks.stream().<Input>map(s -> new Input.TaskInput(new Output(s, "output"))).toList()
+            stripTasks.stream().<Input>map(s -> new Input.TaskInput(new Output(s, "resources"))).toList()
         ));
-        config.aliases.put("resources", new Output("mergedResources", "resources"));
+        config.aliases.put("resources", new Output("mergedResources", "output"));
 
         return config;
     }
 
-    private static Argument processArgument(String arg, NeoFormStep step, NeoFormConfig fullConfig, String listLibrariesName) {
+    private static Argument processArgument(Map<String, Input> inputs, String arg, NeoFormStep step, NeoFormConfig fullConfig, String listLibrariesName) {
         if (arg.startsWith("{") && arg.endsWith("}")) {
             var name = arg.substring(1, arg.length() - 1);
             return switch (name) {
@@ -390,7 +487,7 @@ public final class NeoFormGenerator {
                 default -> {
                     var stepValue = step.values().get(name);
                     if (stepValue != null) {
-                        yield new Argument.FileInput(null, parseStepInput(step, name), PathSensitivity.NONE);
+                        yield new Argument.FileInput(null, parseStepInput(inputs, step, name), PathSensitivity.NONE);
                     } else {
                         if (fullConfig.data().containsKey(name)) {
                             var input = new Input.TaskInput(new Output("generated_retrieve_" + name, "output"));
@@ -415,12 +512,15 @@ public final class NeoFormGenerator {
         return function.version().startsWith("org.vineflower:vineflower:");
     }
 
-    private static Input parseStepInput(NeoFormStep step, String inputName) {
+    private static Input parseStepInput(Map<String, Input> inputs, NeoFormStep step, String inputName) {
         var value = step.values().get(inputName);
         if (value.startsWith("{") && value.endsWith("}")) {
             var name = value.substring(1, value.length() - 1);
             if (name.endsWith("Output")) {
                 var start = name.substring(0, name.length() - "Output".length());
+                if (inputs.containsKey(start)) {
+                    return inputs.get(start);
+                }
                 return new Input.TaskInput(new Output(start, "output"));
             }
             throw new IllegalArgumentException("Unsure how to fill variable `" + name + "` in step `"+step.name() + "`");
