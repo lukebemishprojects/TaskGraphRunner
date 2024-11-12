@@ -80,9 +80,6 @@ public final class MappingsUtil {
             }
             var firstSrcPart = parts[0];
             var firstDstPart = dstParts[0];
-            if (!firstSrcPart.equals(firstDstPart)) {
-                continue;
-            }
             var remappedFirstSrcPart = tree.mapClassName(firstSrcPart, targetNamespace);
             if (remappedFirstSrcPart.equals(firstDstPart)) {
                 continue;
