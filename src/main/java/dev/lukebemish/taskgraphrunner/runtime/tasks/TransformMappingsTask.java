@@ -8,6 +8,7 @@ import dev.lukebemish.taskgraphrunner.runtime.Context;
 import dev.lukebemish.taskgraphrunner.runtime.Task;
 import dev.lukebemish.taskgraphrunner.runtime.TaskInput;
 import dev.lukebemish.taskgraphrunner.runtime.mappings.MappingsSourceImpl;
+import dev.lukebemish.taskgraphrunner.runtime.mappings.MappingsUtil;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -57,7 +58,7 @@ public class TransformMappingsTask extends Task {
 
     @Override
     protected void run(Context context) {
-        var mappings = source.makeMappings(context);
+        var mappings = MappingsUtil.fixInnerClasses(source.makeMappings(context));
         try (var writer = Files.newBufferedWriter(context.taskOutputPath(this, "output"), StandardCharsets.UTF_8);
              var mappingsWriter = MappingsSourceImpl.getWriter(writer, format)) {
             mappingsWriter.accept(mappings);

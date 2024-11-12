@@ -8,6 +8,7 @@ import dev.lukebemish.taskgraphrunner.runtime.Task;
 import dev.lukebemish.taskgraphrunner.runtime.TaskInput;
 import dev.lukebemish.taskgraphrunner.runtime.execution.ToolDaemonExecutor;
 import dev.lukebemish.taskgraphrunner.runtime.mappings.MappingsSourceImpl;
+import dev.lukebemish.taskgraphrunner.runtime.mappings.MappingsUtil;
 import dev.lukebemish.taskgraphrunner.runtime.mappings.ParchmentMappingWriter;
 import dev.lukebemish.taskgraphrunner.runtime.util.Tools;
 import org.jspecify.annotations.Nullable;
@@ -118,7 +119,7 @@ public class JstTask extends Task {
             // Might eventually look at making this configurable
             command.add("--parchment-conflict-prefix=p");
             var parchmentFile = workingDirectory.resolve("parchment.json");
-            var mappings = parchmentMappingsSource.makeMappings(context);
+            var mappings = MappingsUtil.fixInnerClasses(parchmentMappingsSource.makeMappings(context));
             try (var writer = Files.newBufferedWriter(parchmentFile, StandardCharsets.UTF_8);
                  var mappingWriter = new ParchmentMappingWriter(writer)) {
                 mappingWriter.accept(mappings);
