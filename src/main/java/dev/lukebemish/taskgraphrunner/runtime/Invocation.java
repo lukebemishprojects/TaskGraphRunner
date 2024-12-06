@@ -61,6 +61,47 @@ public class Invocation implements Context, AutoCloseable {
         if (outputType == null) {
             throw new IllegalArgumentException("No such output `"+outputName+"` for task `"+task.name()+"`");
         }
+        var contentsHash = contentsHash(task);
+        return taskDirectory(task).resolve(contentsHash+"."+outputName+"."+task.outputId()+"."+outputType);
+    }
+
+    @Override
+    public Path taskOutputMarkerPath(Task task, String outputName) {
+        var outputType = task.outputTypes().get(outputName);
+        if (outputType == null) {
+            throw new IllegalArgumentException("No such output `"+outputName+"` for task `"+task.name()+"`");
+        }
+        var contentsHash = contentsHash(task);
+        return taskDirectory(task).resolve(contentsHash+"."+outputName+"."+task.outputId()+"."+outputType+".txt");
+    }
+
+    @Override
+    public Path existingTaskOutput(Task task, String outputName) {
+        var outputType = task.outputTypes().get(outputName);
+        if (outputType == null) {
+            throw new IllegalArgumentException("No such output `"+outputName+"` for task `"+task.name()+"`");
+        }
+        var contentsHash = contentsHash(task);
+        var markerPath = taskDirectory(task).resolve(contentsHash+"."+outputName+"."+task.outputId()+"."+outputType+".txt");
+        if (!Files.exists(markerPath)) {
+            return null;
+        }
+        try {
+            var contents = Files.readString(markerPath, StandardCharsets.UTF_8);
+            var prefix = contents.substring(0, 2);
+            return contentAddressableDirectory().resolve(prefix).resolve(contents + "." + outputType);
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
+    }
+
+    @Override
+    public Path pathFromHash(String hash, String outputType) {
+        var prefix = hash.substring(0, 2);
+        return contentAddressableDirectory().resolve(prefix).resolve(hash + "." + outputType);
+    }
+
+    private String contentsHash(Task task) {
         MessageDigest digestContents;
         try {
             digestContents = MessageDigest.getInstance("MD5");
@@ -68,8 +109,11 @@ public class Invocation implements Context, AutoCloseable {
             throw new RuntimeException(e);
         }
         task.hashContents(RecordedInput.ByteConsumer.of(digestContents), this);
-        var contentsHash = HexFormat.of().formatHex(digestContents.digest());
-        return taskDirectory(task).resolve(contentsHash+"."+outputName+"."+task.outputId()+"."+outputType);
+        return HexFormat.of().formatHex(digestContents.digest());
+    }
+
+    private Path contentAddressableDirectory() {
+        return cacheDirectory.resolve("objects");
     }
 
     @Override
@@ -87,27 +131,13 @@ public class Invocation implements Context, AutoCloseable {
 
     @Override
     public Path taskStatePath(Task task) {
-        MessageDigest digestContents;
-        try {
-            digestContents = MessageDigest.getInstance("MD5");
-        } catch (NoSuchAlgorithmException e) {
-            throw new RuntimeException(e);
-        }
-        task.hashContents(RecordedInput.ByteConsumer.of(digestContents), this);
-        var contentsHash = HexFormat.of().formatHex(digestContents.digest());
+        var contentsHash = contentsHash(task);
         return taskDirectory(task).resolve(contentsHash+".json");
     }
 
     @Override
     public Path taskWorkingDirectory(Task task) {
-        MessageDigest digestContents;
-        try {
-            digestContents = MessageDigest.getInstance("MD5");
-        } catch (NoSuchAlgorithmException e) {
-            throw new RuntimeException(e);
-        }
-        task.hashContents(RecordedInput.ByteConsumer.of(digestContents), this);
-        var contentsHash = HexFormat.of().formatHex(digestContents.digest());
+        var contentsHash = contentsHash(task);
         return taskDirectory(task).resolve(contentsHash);
     }
 

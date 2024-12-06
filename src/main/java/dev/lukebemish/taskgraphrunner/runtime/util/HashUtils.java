@@ -13,35 +13,42 @@ import java.security.DigestOutputStream;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.HexFormat;
+import java.util.LinkedHashSet;
 import java.util.Map;
-import java.util.Queue;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentLinkedDeque;
 
 public final class HashUtils {
     private HashUtils() {}
 
-    private static final Queue<Path> cachedHashPaths = new ConcurrentLinkedDeque<>();
+    private static final LinkedHashSet<CacheKey> cachedHashPaths = new LinkedHashSet<>();
     private static final int pathsToCache = 1024;
-    private static final Map<Path, CacheResult> cachedHashes = new ConcurrentHashMap<>();
+    private static final Map<CacheKey, CacheResult> cachedHashes = new ConcurrentHashMap<>();
 
+    private record CacheKey(Path path, String algorithm) {}
     private record CacheResult(byte[] result, FileTime lastModified) {}
 
     public static void hash(Path path, RecordedInput.ByteConsumer digest) {
         hash(path, digest, "MD5");
     }
 
+    private static final Object cacheKeyLock = new Object();
+
     public static void hash(Path path, RecordedInput.ByteConsumer finalDigest, String algorithm) {
-        cachedHashPaths.add(path);
-        if (cachedHashPaths.size() > pathsToCache) {
-            var removedPath = cachedHashPaths.poll();
-            cachedHashes.remove(removedPath);
+        var cacheKey = new CacheKey(path, algorithm);
+        synchronized (cacheKeyLock) {
+            cachedHashPaths.addFirst(cacheKey);
+            while (cachedHashPaths.size() > pathsToCache) {
+                var removedPath = cachedHashPaths.removeLast();
+                cachedHashes.remove(removedPath);
+            }
         }
-        var existingHash = cachedHashes.get(path);
+
+        var existingHash = cachedHashes.get(cacheKey);
         if (existingHash != null) {
             try {
                 if (Files.getLastModifiedTime(path).compareTo(existingHash.lastModified()) != 0) {
-                    cachedHashes.remove(path);
+                    cachedHashes.remove(cacheKey);
+                    cachedHashPaths.remove(cacheKey);
                     hash(path, finalDigest, algorithm);
                     return;
                 }
@@ -57,7 +64,7 @@ public final class HashUtils {
             is.transferTo(new DigestOutputStream(OutputStream.nullOutputStream(), digest));
             var hash = digest.digest();
             var lastModified = Files.getLastModifiedTime(path);
-            cachedHashes.put(path, new CacheResult(hash, lastModified));
+            cachedHashes.put(cacheKey, new CacheResult(hash, lastModified));
             finalDigest.update(hash);
         } catch (IOException | NoSuchAlgorithmException e) {
             throw new RuntimeException(e);

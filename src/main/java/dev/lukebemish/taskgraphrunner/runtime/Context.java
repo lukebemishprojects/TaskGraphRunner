@@ -5,16 +5,20 @@ import dev.lukebemish.taskgraphrunner.runtime.util.LockManager;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collection;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
-import java.util.Set;
 import java.util.concurrent.Callable;
 import java.util.concurrent.Future;
 import java.util.function.Consumer;
 
 public interface Context {
     Path taskOutputPath(Task task, String outputName);
+
+    Path taskOutputMarkerPath(Task task, String outputName);
+
+    Path pathFromHash(String hash, String outputType);
+
+    Path existingTaskOutput(Task task, String outputName);
 
     Path taskStatePath(Task task);
 
@@ -31,20 +35,6 @@ public interface Context {
     LockManager lockManager();
 
     Path transformCachePath(int version);
-
-    private void collectDependencies(Set<String> tasks, Task task, Set<String> visited) {
-        if (visited.contains(task.name())) {
-            throw new IllegalArgumentException("Circular dependency detected on task " + task.name());
-        }
-        var newVisited = new HashSet<>(visited);
-        newVisited.add(task.name());
-        tasks.add(task.name());
-        for (var input : task.inputs()) {
-            for (var dependency : input.dependencies()) {
-                collectDependencies(tasks, getTask(dependency), newVisited);
-            }
-        }
-    }
 
     boolean useCached();
 

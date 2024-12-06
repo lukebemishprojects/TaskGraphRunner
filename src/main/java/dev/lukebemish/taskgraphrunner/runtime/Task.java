@@ -47,6 +47,7 @@ import java.util.HashSet;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Queue;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
@@ -164,7 +165,7 @@ public abstract class Task implements RecordedInput {
                 try (var ignored = node.task.lock(context)) {
                     node.task.execute(context);
                     for (var entry : node.outputs.entrySet()) {
-                        var outputPath = context.taskOutputPath(node.task, entry.getKey());
+                        var outputPath = Objects.requireNonNull(context.existingTaskOutput(node.task, entry.getKey()), "Output did not exist");
                         try {
                             Files.copy(outputPath, entry.getValue(), StandardCopyOption.REPLACE_EXISTING);
                         } catch (IOException e) {
@@ -293,8 +294,8 @@ public abstract class Task implements RecordedInput {
                             break;
                         }
                         var oldHash = oldHashElement.getAsString();
-                        var outputPath = context.taskOutputPath(this, output);
-                        if (!Files.exists(outputPath)) {
+                        var outputPath = context.existingTaskOutput(this, output);
+                        if (outputPath == null || !Files.exists(outputPath)) {
                             allOutputsMatch = false;
                             break;
                         }
@@ -319,32 +320,49 @@ public abstract class Task implements RecordedInput {
             }
             outputId++;
             // Something was not up-to-date -- so we run everything
-            LOGGER.info("Starting task `" + name + "`.");
-            if (parallelism == null) {
-                run(context);
-            } else {
-                context.lockManager().enforcedParallelism(context, parallelism, () -> run(context));
-            }
-            boolean nothingChanged = true;
-            for (var output : outputTypes().keySet()) {
-                var outputPath = context.taskOutputPath(this, output);
-                var existingHash = currentHashes.get(output);
-                if (existingHash == null) {
-                    nothingChanged = false;
-                    break;
+            LOGGER.info("Starting task `{}`.", name);
+            try {
+                if (parallelism == null) {
+                    run(context);
+                } else {
+                    context.lockManager().enforcedParallelism(context, parallelism, () -> run(context));
                 }
-                var newHash = HashUtils.hash(outputPath);
-                if (!existingHash.equals(newHash)) {
-                    nothingChanged = false;
-                    break;
-                }
-            }
-            if (nothingChanged) {
+                boolean nothingChanged = true;
                 for (var output : outputTypes().keySet()) {
                     var outputPath = context.taskOutputPath(this, output);
-                    Files.delete(outputPath);
+                    var existingHash = currentHashes.get(output);
+                    if (existingHash == null) {
+                        nothingChanged = false;
+                        break;
+                    }
+                    var newHash = HashUtils.hash(outputPath);
+                    if (!existingHash.equals(newHash)) {
+                        nothingChanged = false;
+                        break;
+                    }
                 }
-                outputId--;
+                if (nothingChanged) {
+                    outputId--;
+                } else {
+                    for (var output : outputTypes().keySet()) {
+                        var outputPath = context.taskOutputPath(this, output);
+                        var hash = HashUtils.hash(outputPath, "SHA-256");
+                        var outPath = context.pathFromHash(hash, outputTypes().get(output));
+                        var markerPath = context.taskOutputMarkerPath(this, output);
+                        Files.createDirectories(outPath.getParent());
+                        Files.createDirectories(markerPath.getParent());
+                        // This is atomic because locking here is less sensible
+                        Files.move(outputPath, outPath, StandardCopyOption.ATOMIC_MOVE);
+                        Files.writeString(markerPath, hash, StandardCharsets.UTF_8);
+                    }
+                }
+            } finally {
+                for (var output : outputTypes().keySet()) {
+                    var outputPath = context.taskOutputPath(this, output);
+                    if (Files.exists(outputPath)) {
+                        Files.delete(outputPath);
+                    }
+                }
             }
             saveState(context);
             LOGGER.info("Finished task `" + name + "`.");
@@ -365,7 +383,7 @@ public abstract class Task implements RecordedInput {
         var inputState = recordedValue(context);
         JsonObject outputHashes = new JsonObject();
         for (var output : outputTypes().keySet()) {
-            var outputPath = context.taskOutputPath(this, output);
+            var outputPath = Objects.requireNonNull(context.existingTaskOutput(this, output), "Output did not exist");
             if (Files.exists(outputPath)) {
                 try {
                     var hash = HashUtils.hash(outputPath);

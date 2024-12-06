@@ -56,6 +56,7 @@ public class Clean implements Runnable {
             }
             if (outputDuration >= 0) {
                 cleanTaskOutputs(lockManager);
+                cleanOutputObjects(lockManager);
             }
             if (transformDuration >= 0) {
                 cleanTransforms(lockManager);
@@ -248,6 +249,24 @@ public class Clean implements Runnable {
         }
         if (deletedOutputs.get() > 0) {
             LOGGER.info("Deleted {} outdated output files", deletedOutputs.get());
+        }
+    }
+
+    private void cleanOutputObjects(LockManager lockManager) {
+        FileTime outdated = FileTime.from(Instant.now().minus(outputDuration, ChronoUnit.DAYS));
+
+        if (!Files.exists(main.cacheDir.resolve("objects"))) {
+            // Nothing to clean
+            return;
+        }
+        var deletedOutputs = new AtomicInteger();
+        try (var dirs = Files.list(main.cacheDir.resolve("objects"))) {
+            dirs.forEach(dir -> deleteOutdated(lockManager, dir, outdated, deletedOutputs, false));
+        } catch (IOException e) {
+            LOGGER.error("Issue deleting object directories", e);
+        }
+        if (deletedOutputs.get() > 0) {
+            LOGGER.info("Deleted {} outdated output result files", deletedOutputs.get());
         }
     }
 

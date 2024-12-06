@@ -165,7 +165,7 @@ public sealed interface TaskInput extends RecordedInput {
 
         @Override
         public Path path(Context context) {
-            return context.taskOutputPath(context.getTask(output.taskName()), output.name());
+            return output.getPath(context);
         }
     }
 
