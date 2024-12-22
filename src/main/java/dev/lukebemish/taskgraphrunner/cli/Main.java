@@ -9,9 +9,10 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.Callable;
 
 @CommandLine.Command(name = "taskgraphrunner", mixinStandardHelpOptions = true)
-public class Main implements Runnable {
+public class Main implements Callable<Integer> {
     @CommandLine.Option(names = "--cache-dir", description = "Where caches should be stored.")
     Path cacheDir = defaultCacheDirectory();
 
@@ -23,9 +24,10 @@ public class Main implements Runnable {
     }
 
     @Override
-    public void run() {
+    public Integer call() {
         System.err.println("No subcommand specified.");
         new CommandLine(this).usage(System.err);
+        return 1;
     }
 
     static class ArtifactManifestOption {
@@ -73,7 +75,6 @@ public class Main implements Runnable {
             .addSubcommand("clean", new Clean(this))
             .addSubcommand("neoform", new NeoForm(this))
             .addSubcommand("vanilla", new Vanilla(this))
-            .addSubcommand("daemon", new Daemon(this))
             .addSubcommand("mark", new Mark(this))
             .addSubcommand("mermaid", new Mermaid(this))
             .execute(args);
@@ -93,18 +94,10 @@ public class Main implements Runnable {
         return userHomeDir.resolve(".taskgraphrunner");
     }
 
-    // Primarily for the daemon, but may be useful otherwise too
+    // Kept around in case it's useful for one-off invocation
     private static final boolean STACKTRACE = !Boolean.getBoolean("dev.lukebemish.taskgraphrunner.hidestacktrace");
 
-    static void execute(Runnable runnable) {
-        try {
-            runnable.run();
-        } catch (Throwable t) {
-            logException(t);
-        }
-    }
-
-    static void logException(Throwable t) {
+    private static void logException(Throwable t) {
         if (STACKTRACE) {
             t.printStackTrace(System.err);
         } else {

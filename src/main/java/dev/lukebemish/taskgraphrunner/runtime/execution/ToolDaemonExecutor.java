@@ -1,5 +1,7 @@
 package dev.lukebemish.taskgraphrunner.runtime.execution;
 
+import dev.lukebemish.forkedtaskexecutor.ForkedTaskExecutor;
+import dev.lukebemish.forkedtaskexecutor.ForkedTaskExecutorSpec;
 import dev.lukebemish.taskgraphrunner.runtime.Context;
 import dev.lukebemish.taskgraphrunner.runtime.util.FileUtils;
 import dev.lukebemish.taskgraphrunner.runtime.util.HashUtils;
@@ -11,17 +13,12 @@ import org.objectweb.asm.Opcodes;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.io.BufferedReader;
-import java.io.DataInputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.DataOutputStream;
-import java.io.EOFException;
 import java.io.File;
 import java.io.IOException;
-import java.io.InputStream;
-import java.io.InputStreamReader;
 import java.io.UncheckedIOException;
-import java.net.InetAddress;
-import java.net.Socket;
+import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -33,28 +30,58 @@ import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.Future;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
-import java.util.concurrent.atomic.AtomicInteger;
 import java.util.jar.JarInputStream;
 import java.util.jar.JarOutputStream;
 import java.util.stream.Collectors;
 import java.util.zip.ZipEntry;
 
 public class ToolDaemonExecutor implements AutoCloseable {
-    private final Process process;
-    private final Socket socket;
-    private final ResultListener listener;
-
-    private ToolDaemonExecutor() throws IOException {
-        this(new Path[0]);
+    public static void execute(Path jar, Path logFile, String[] args, Context context, boolean classpathScoped) {
+        Path transformedJar;
+        try {
+            transformedJar = transform(jar, context);
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
+        String mainClass;
+        try (var jarFile = new JarInputStream(Files.newInputStream(transformedJar))) {
+            var manifest = jarFile.getManifest();
+            mainClass = manifest.getMainAttributes().getValue("Main-Class");
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
+        if (mainClass == null) {
+            throw new RuntimeException("No Main-Class attribute in manifest");
+        }
+        execute(List.of(transformedJar), mainClass, logFile, args, context, classpathScoped);
     }
 
-    private ToolDaemonExecutor(Path[] classpath) throws IOException {
+    public static void execute(Collection<Path> classpath, String mainClass, Path logFile, String[] args, Context context, boolean classpathScoped) {
+        var transformedClasspath = classpath.stream().map(p -> {
+            try {
+                return transform(p.toAbsolutePath(), context).toAbsolutePath();
+            } catch (IOException e) {
+                throw new UncheckedIOException(e);
+            }
+        }).toArray(Path[]::new);
+        var transformedClasspathString = Arrays.stream(transformedClasspath).map(Path::toString).collect(Collectors.joining(File.pathSeparator));
+        (classpathScoped ? getInstance(transformedClasspath) : getInstance()).execute(classpathScoped ? "" : transformedClasspathString, mainClass, logFile, args);
+    }
+
+    private static final Logger LOGGER = LoggerFactory.getLogger(ToolDaemonExecutor.class);
+    private static ToolDaemonExecutor INSTANCE;
+    private static final Map<String, ToolDaemonExecutor> CLASSPATH_INSTANCES = new ConcurrentHashMap<>();
+
+    private final ForkedTaskExecutor executor;
+    private final Runnable onRemoval;
+
+    private ToolDaemonExecutor(Runnable onRemoval) throws IOException {
+        this(new Path[0], onRemoval);
+    }
+
+    private ToolDaemonExecutor(Path[] classpath, Runnable onRemoval) throws IOException {
+        this.onRemoval = onRemoval;
         var workingDirectory = Files.createTempDirectory("taskgraphrunner");
         var tempFile = workingDirectory.resolve("execution-daemon.jar");
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {
@@ -68,11 +95,6 @@ public class ToolDaemonExecutor implements AutoCloseable {
             Files.copy(Objects.requireNonNull(stream, "Could not find bundled tool execution daemon"), tempFile);
         }
 
-        var builder = new ProcessBuilder();
-        var javaExecutablePath = ProcessHandle.current()
-            .info()
-            .command()
-            .orElseThrow();
         List<String> fullClasspath = new ArrayList<>();
         fullClasspath.add(tempFile.toAbsolutePath().toString());
         for (Path path : classpath) {
@@ -83,229 +105,19 @@ public class ToolDaemonExecutor implements AutoCloseable {
             writer.write(String.join(File.pathSeparator, fullClasspath));
             writer.newLine();
         }
-        builder.command(javaExecutablePath, "-cp", "@"+ classpathFile.toAbsolutePath(), "dev.lukebemish.taskgraphrunner.execution.Daemon");
-        builder.redirectOutput(ProcessBuilder.Redirect.PIPE);
-        builder.redirectError(ProcessBuilder.Redirect.PIPE);
-        builder.redirectInput(ProcessBuilder.Redirect.PIPE);
 
-        try {
-            this.process = builder.start();
-        } catch (IOException e) {
-            throw new RuntimeException(e);
-        }
-        CompletableFuture<String> socketPort = new CompletableFuture<>();
-        var thread = new StreamWrapper(process.getInputStream(), socketPort);
-        new Thread(() -> {
-            try {
-                InputStreamReader reader = new InputStreamReader(process.getErrorStream());
-                BufferedReader bufferedReader = new BufferedReader(reader);
-                String line;
-                while ((line = bufferedReader.readLine()) != null) {
-                    System.err.println(line);
-                }
-            } catch (IOException e) {
-                throw new UncheckedIOException(e);
-            }
-        }).start();
-        thread.start();
-        try {
-            String socketPortString = socketPort.get(4000, TimeUnit.MILLISECONDS);
-            int port = Integer.parseInt(socketPortString);
-            this.socket = new Socket(InetAddress.getLoopbackAddress(), port);
+        var spec = ForkedTaskExecutorSpec.builder()
+            .javaExecutable(ProcessHandle.current()
+                .info()
+                .command()
+                .orElseThrow())
+            .addJvmOption("-cp")
+            .addJvmOption("@"+ classpathFile.toAbsolutePath())
+            .taskClass("dev.lukebemish.taskgraphrunner.execution.ToolTask")
+            .build();
 
-            this.listener = new ResultListener(socket);
-            this.listener.start();
-        } catch (InterruptedException | ExecutionException | TimeoutException e) {
-            throw new RuntimeException(e);
-        }
+        this.executor = new ForkedTaskExecutor(spec);
     }
-
-    private static final class StreamWrapper extends Thread {
-        private final InputStream stream;
-        private final CompletableFuture<String> socketPort;
-
-        private StreamWrapper(InputStream stream, CompletableFuture<String> socketPort) {
-            this.stream = stream;
-            this.socketPort = socketPort;
-            this.setUncaughtExceptionHandler((t, e) -> {
-                socketPort.completeExceptionally(e);
-                StreamWrapper.this.getThreadGroup().uncaughtException(t, e);
-            });
-        }
-
-        @Override
-        public void run() {
-            try {
-                var reader = new BufferedReader(new InputStreamReader(stream));
-                socketPort.complete(reader.readLine());
-                String line;
-                while ((line = reader.readLine()) != null) {
-                    System.out.println(line);
-                }
-            } catch (IOException exception) {
-                throw new UncheckedIOException(exception);
-            }
-        }
-    }
-
-    private static final class ResultListener extends Thread {
-        private final Map<Integer, CompletableFuture<?>> results = new ConcurrentHashMap<>();
-        private final Socket socket;
-        private final DataOutputStream output;
-
-        private ResultListener(Socket socket) throws IOException {
-            this.socket = socket;
-            output = new DataOutputStream(socket.getOutputStream());
-            this.setUncaughtExceptionHandler((t, e) -> {
-                try {
-                    shutdown(e);
-                } catch (IOException ex) {
-                    var exception = new UncheckedIOException(ex);
-                    exception.addSuppressed(e);
-                    ResultListener.this.getThreadGroup().uncaughtException(t, exception);
-                }
-                ResultListener.this.getThreadGroup().uncaughtException(t, e);
-            });
-        }
-
-        private synchronized Future<?> submit(int id, IoConsumer<DataOutputStream> taskWriter) throws IOException {
-            if (closed) {
-                throw new IOException("Listener is closed");
-            }
-            var out = results.computeIfAbsent(id, i -> new CompletableFuture<>());
-            output.writeInt(id);
-            taskWriter.accept(output);
-            output.flush();
-            return out;
-        }
-
-        private volatile boolean closed = false;
-
-        private synchronized void beginClose(Throwable e) throws IOException {
-            if (this.closed) return;
-            this.closed = true;
-            for (var future : results.values()) {
-                future.completeExceptionally(e);
-            }
-            results.clear();
-
-            socket.shutdownInput();
-        }
-
-        private void finishClose() throws IOException {
-            output.writeInt(-1);
-            socket.close();
-        }
-
-        public void shutdown() throws IOException {
-            shutdown(new IOException("Execution was interrupted"));
-        }
-
-        private void shutdown(Throwable t) throws IOException {
-            this.beginClose(t);
-            try {
-                this.join();
-            } catch (InterruptedException e) {
-                // continue, it's fine
-            }
-            this.finishClose();
-        }
-
-        @Override
-        public void run() {
-            try {
-                if (!closed) {
-                    var input = new DataInputStream(socket.getInputStream());
-                    while (!closed) {
-                        int id = input.readInt();
-                        int status = input.readInt();
-                        if (status == 0) {
-                            var future = results.remove(id);
-                            if (future != null) {
-                                future.complete(null);
-                            }
-                        } else {
-                            var future = results.remove(id);
-                            if (future != null) {
-                                var exception = new RuntimeException("Tool failed with exit code " + status);
-                                future.completeExceptionally(exception);
-                            }
-                        }
-                    }
-                }
-            } catch (EOFException ignored) {
-
-            } catch (IOException e) {
-                throw new UncheckedIOException(e);
-            }
-        }
-    }
-
-    @Override
-    public synchronized void close() {
-        List<Exception> suppressed = new ArrayList<>();
-        if (listener != null) {
-            try {
-                listener.shutdown();
-            } catch (Exception e) {
-                suppressed.add(e);
-            }
-        }
-        if (socket != null) {
-            try {
-                socket.close();
-            } catch (Exception e) {
-                suppressed.add(e);
-            }
-        }
-        if (process != null) {
-            try {
-                process.destroy();
-                process.waitFor();
-            } catch (Exception e) {
-                suppressed.add(e);
-            }
-        }
-        if (!suppressed.isEmpty()) {
-            var exception = new IOException("Failed to close resources");
-            suppressed.forEach(exception::addSuppressed);
-            throw new UncheckedIOException(exception);
-        }
-    }
-
-    private final AtomicInteger id = new AtomicInteger();
-
-    private interface IoConsumer<T> {
-        void accept(T t) throws IOException;
-    }
-
-    private void execute(String classpath, String mainClass, Path logFile, String[] args) {
-        var nextId = id.getAndIncrement();
-        try {
-            listener.submit(nextId, output -> {
-                output.writeUTF(classpath);
-                output.writeUTF(mainClass);
-                output.writeUTF(logFile.toAbsolutePath().toString());
-                output.writeInt(args.length);
-                for (String arg : args) {
-                    output.writeUTF(arg);
-                }
-            }).get();
-        } catch (IOException | ExecutionException | InterruptedException e) {
-            logError(logFile);
-            throw new RuntimeException(e);
-        }
-    }
-
-    private static void logError(Path logFile) {
-        if (Files.exists(logFile)) {
-            LOGGER.error("Process failed; see log file at {}", logFile.toAbsolutePath());
-        }
-    }
-
-    private static final Logger LOGGER = LoggerFactory.getLogger(ToolDaemonExecutor.class);
-    private static ToolDaemonExecutor INSTANCE;
-    private static final Map<String, ToolDaemonExecutor> CLASSPATH_INSTANCES = new ConcurrentHashMap<>();
 
     static {
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {
@@ -318,11 +130,17 @@ public class ToolDaemonExecutor implements AutoCloseable {
         }));
     }
 
+    @Override
+    public void close() {
+        onRemoval.run();
+        executor.close();
+    }
+
     private static synchronized ToolDaemonExecutor getInstance(Path[] classpath) {
         var key = String.join(File.pathSeparator, Arrays.stream(classpath).map(it -> it.toAbsolutePath().toString()).toArray(CharSequence[]::new));
         return CLASSPATH_INSTANCES.computeIfAbsent(key, k -> {
             try {
-                return new ToolDaemonExecutor(classpath);
+                return new ToolDaemonExecutor(classpath, () -> CLASSPATH_INSTANCES.remove(key));
             } catch (IOException e) {
                 throw new RuntimeException(e);
             }
@@ -332,21 +150,46 @@ public class ToolDaemonExecutor implements AutoCloseable {
     private static synchronized ToolDaemonExecutor getInstance() {
         if (INSTANCE == null) {
             try {
-                INSTANCE = new ToolDaemonExecutor();
-            } catch (IOException e) {
-                throw new RuntimeException(e);
-            }
-        }
-        if (!INSTANCE.process.isAlive()) {
-            LOGGER.warn("Tool execution daemon has died; starting a new one");
-            INSTANCE.close();
-            try {
-                INSTANCE = new ToolDaemonExecutor();
+                INSTANCE = new ToolDaemonExecutor(() -> INSTANCE = null);
             } catch (IOException e) {
                 throw new RuntimeException(e);
             }
         }
         return INSTANCE;
+    }
+
+    private static void writeString(DataOutputStream output, String string) throws IOException {
+        byte[] bytes = string.getBytes(StandardCharsets.UTF_8);
+        output.writeInt(bytes.length);
+        output.write(bytes);
+    }
+
+    private void execute(String classpath, String mainClass, Path logFile, String[] args) {
+        var output = new ByteArrayOutputStream();
+        try (var os = new DataOutputStream(output)) {
+            writeString(os, classpath);
+            writeString(os, mainClass);
+            writeString(os, logFile.toAbsolutePath().toString());
+            os.writeInt(args.length);
+            for (String arg : args) {
+                writeString(os, arg);
+            }
+            var status = ByteBuffer.wrap(executor.submit(output.toByteArray())).getInt();
+            if (status != 0) {
+                throw new RuntimeException("Tool failed with exit code " + status);
+            }
+        } catch (Throwable e) {
+            logError(logFile);
+            throw new RuntimeException(e);
+        }
+    }
+
+    private static void logError(Path logFile) {
+        if (Files.exists(logFile)) {
+            LOGGER.error("Process failed; see log file at {}", logFile.toAbsolutePath());
+        } else {
+            LOGGER.error("Process failed, but no log file found at {}", logFile.toAbsolutePath());
+        }
     }
 
     private static final int TRANSFORM_VERSION = 0;
@@ -453,37 +296,5 @@ public class ToolDaemonExecutor implements AutoCloseable {
             }
         }
         return outJarPath;
-    }
-
-    public static void execute(Path jar, Path logFile, String[] args, Context context, boolean classpathScoped) {
-        Path transformedJar;
-        try {
-            transformedJar = transform(jar, context);
-        } catch (IOException e) {
-            throw new UncheckedIOException(e);
-        }
-        String mainClass;
-        try (var jarFile = new JarInputStream(Files.newInputStream(transformedJar))) {
-            var manifest = jarFile.getManifest();
-            mainClass = manifest.getMainAttributes().getValue("Main-Class");
-        } catch (IOException e) {
-            throw new UncheckedIOException(e);
-        }
-        if (mainClass == null) {
-            throw new RuntimeException("No Main-Class attribute in manifest");
-        }
-        execute(List.of(transformedJar), mainClass, logFile, args, context, classpathScoped);
-    }
-
-    public static void execute(Collection<Path> classpath, String mainClass, Path logFile, String[] args, Context context, boolean classpathScoped) {
-        var transformedClasspath = classpath.stream().map(p -> {
-            try {
-                return transform(p.toAbsolutePath(), context).toAbsolutePath();
-            } catch (IOException e) {
-                throw new UncheckedIOException(e);
-            }
-        }).toArray(Path[]::new);
-        var transformedClasspathString = Arrays.stream(transformedClasspath).map(Path::toString).collect(Collectors.joining(File.pathSeparator));
-        (classpathScoped ? getInstance(transformedClasspath) : getInstance()).execute(classpathScoped ? "" : transformedClasspathString, mainClass, logFile, args);
     }
 }

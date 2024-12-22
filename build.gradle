@@ -1,3 +1,5 @@
+import com.github.jengelman.gradle.plugins.shadow.tasks.ShadowJar
+
 plugins {
     id 'java-library'
     id 'maven-publish'
@@ -116,10 +118,22 @@ java {
 
 def mainClassName = 'dev.lukebemish.taskgraphrunner.cli.Main'
 
+tasks.register('executionShadowJar', ShadowJar) {
+    manifest {
+        attributes([
+            'Main-Class': 'dev.lukebemish.forkedtaskexecutor.runner.Main',
+            'Implementation-Version': project.version as String
+        ])
+    }
+    archiveClassifier = 'execution-all'
+    from sourceSets.execution.output
+    configurations = [project.configurations.executionRuntimeClasspath]
+}
+
 tasks.register('shadowBugWorkaroundNestedJar', Jar) {
     archiveBaseName.set('shadow-bug-workaround-nested')
-    dependsOn tasks.executionJar
-    from (tasks.executionJar.archiveFile) {
+    dependsOn tasks.executionShadowJar
+    from (tasks.executionShadowJar.archiveFile) {
         rename { 'execution-daemon.jar' }
     }
 }
@@ -131,8 +145,8 @@ jar {
             'Implementation-Version': project.version as String
         ])
     }
-    dependsOn tasks.executionJar
-    from (tasks.executionJar.archiveFile) {
+    dependsOn tasks.executionShadowJar
+    from (tasks.executionShadowJar.archiveFile) {
         rename { 'execution-daemon.jar' }
     }
 }
@@ -146,15 +160,6 @@ shadowJar {
     }
     dependsOn tasks.shadowBugWorkaroundNestedJar
     from (tasks.shadowBugWorkaroundNestedJar.archiveFile)
-}
-
-executionJar {
-    manifest {
-        attributes([
-            'Main-Class': 'dev.lukebemish.taskgraphrunner.execution.Daemon',
-            'Implementation-Version': project.version as String
-        ])
-    }
 }
 
 configurations {
@@ -207,6 +212,19 @@ dependencies {
 
     executionCompileOnly cLibs.bundles.compileonly
     executionAnnotationProcessor cLibs.bundles.annotationprocessor
+    executionImplementation('dev.lukebemish:forkedtaskexecutor:0.1.1') {
+        capabilities {
+            requireFeature('runner')
+        }
+    }
+
+    implementation 'dev.lukebemish:forkedtaskexecutor:0.1.1'
+    implementation('dev.lukebemish:forkedtaskexecutor:0.1.1') {
+        capabilities {
+            requireFeature('runner')
+        }
+    }
+    modelApi 'dev.lukebemish:forkedtaskexecutor:0.1.1'
 }
 
 // This keeps the same versions at runtime and compile time
