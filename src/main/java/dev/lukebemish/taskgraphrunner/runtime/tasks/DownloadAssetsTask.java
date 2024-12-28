@@ -44,7 +44,7 @@ public class DownloadAssetsTask extends Task {
 
     @Override
     protected boolean upToDate(long lastExecuted, Context context) {
-        var propertiesPath = context.taskOutputPath(this, "properties");
+        var propertiesPath = context.existingTaskOutput(this, "properties");
         var properties = new Properties();
         try (var reader = Files.newBufferedReader(propertiesPath, StandardCharsets.UTF_8)) {
             properties.load(reader);
