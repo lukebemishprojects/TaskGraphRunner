@@ -30,6 +30,8 @@ final class InputAdapter extends GsonAdapter<Input> {
             case Input.ParameterInput parameterInput -> out.value("parameter." + parameterInput.parameter());
             case Input.TaskInput taskInput ->
                 out.value("task." + taskInput.output().taskName() + "." + taskInput.output().name());
+            case Input.AliasInput aliasInput ->
+                out.value("alias." + aliasInput.alias());
             case Input.ListInput listInput -> {
                 if (listInput.listOrdering() == ListOrdering.ORIGINAL) {
                     out.beginArray();
@@ -75,6 +77,7 @@ final class InputAdapter extends GsonAdapter<Input> {
                     }
                     yield new Input.TaskInput(new Output(parts[0], parts[1]));
                 }
+                case "alias" -> new Input.AliasInput(string.substring(index + 1));
                 default -> throw new IllegalArgumentException("Invalid input type: " + prefix);
             };
         } else if (in.peek() == JsonToken.BEGIN_ARRAY) {
@@ -96,6 +99,7 @@ final class InputAdapter extends GsonAdapter<Input> {
                 var output = GSON.fromJson(value, Output.class);
                 yield new Input.TaskInput(output);
             }
+            case "alias" -> new Input.AliasInput(GSON.fromJson(value, String.class));
             case "list" -> {
                 List<Input> inputs = new ArrayList<>();
                 for (var element : value.getAsJsonArray()) {

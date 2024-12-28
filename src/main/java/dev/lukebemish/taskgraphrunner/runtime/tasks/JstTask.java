@@ -88,6 +88,8 @@ public class JstTask extends Task {
         this.args = new ArrayList<>();
         ArgumentProcessor.processArgs("arg", model.args, this.args, workItem, context, outputExtensions);
 
+        this.inputs.addAll(args.stream().flatMap(ArgumentProcessor.Arg::inputs).toList());
+
         this.classpathScopedJvm = model.classpathScopedJvm;
     }
 
@@ -183,7 +185,7 @@ public class JstTask extends Task {
 
     @Override
     public List<TaskInput> inputs() {
-        return inputs;
+        return this.inputs;
     }
 
     @Override

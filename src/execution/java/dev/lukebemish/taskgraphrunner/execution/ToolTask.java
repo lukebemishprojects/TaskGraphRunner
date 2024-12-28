@@ -18,6 +18,8 @@ import java.net.URLClassLoader;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Paths;
 import java.util.Arrays;
+import java.util.HashSet;
+import java.util.Set;
 import java.util.function.Supplier;
 
 public class ToolTask implements Task {
@@ -88,8 +90,10 @@ public class ToolTask implements Task {
                         method.invoke(null, (Object) args);
                     } catch (Throwable t) {
                         Throwable cause = t;
-                        while (!(cause instanceof SystemExit) && cause.getCause() != null) {
+                        Set<Throwable> seen = new HashSet<>();
+                        while (!(cause instanceof SystemExit) && cause.getCause() != null && !seen.contains(cause)) {
                             cause = t.getCause();
+                            seen.add(cause);
                         }
                         if (cause instanceof SystemExit systemExit) {
                             return systemExit.status();

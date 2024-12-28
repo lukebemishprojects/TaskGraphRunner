@@ -34,17 +34,24 @@ public class Invocation implements Context, AutoCloseable {
     private final LockManager lockManager;
 
     private final Map<String, Task> tasks = new HashMap<>();
+    private final Map<String, Output> aliases;
     private final List<ArtifactManifest> artifactManifests = new ArrayList<>();
     private final ArtifactManifest artifactManifest = ArtifactManifest.delegating(artifactManifests);
     private final boolean useCached;
     private final AssetDownloadOptions assetOptions;
     private final ExecutorService executor = Executors.newThreadPerTaskExecutor(THREAD_FACTORY);
 
-    public Invocation(Path cacheDirectory, AssetDownloadOptions assetDownloadOptions, boolean useCached) throws IOException {
+    public Invocation(Path cacheDirectory, Map<String, Output> aliases, AssetDownloadOptions assetDownloadOptions, boolean useCached) throws IOException {
         this.cacheDirectory = cacheDirectory;
         this.lockManager = new LockManager(cacheDirectory.resolve("locks"));
+        this.aliases = aliases;
         this.useCached = useCached;
         this.assetOptions = assetDownloadOptions;
+    }
+
+    @Override
+    public Map<String, Output> aliases() {
+        return aliases;
     }
 
     public void addTask(Task task) {

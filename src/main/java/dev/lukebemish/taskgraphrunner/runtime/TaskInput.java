@@ -355,11 +355,12 @@ public sealed interface TaskInput extends RecordedInput {
                 }
                 yield new FileInput(name, pathNotation(context, stringValue.value()), pathSensitivity);
             }
-            case Input.TaskInput taskInput -> {
+            case Input.GeneralTaskInput taskInput -> {
                 if (pathSensitivity != PathSensitivity.NONE) {
                     throw new IllegalArgumentException("Cannot use path sensitivity with task input");
                 }
-                yield new TaskOutputInput(name, new TaskOutput(taskInput.output().taskName(), taskInput.output().name()));
+                var output = taskInput.output(context.aliases());
+                yield new TaskOutputInput(name, new TaskOutput(output.taskName(), output.name()));
             }
             case Input.DirectInput directInput -> {
                 if (!(directInput.value() instanceof Value.StringValue stringValue)) {
@@ -377,11 +378,12 @@ public sealed interface TaskInput extends RecordedInput {
                 Value value = workItem.parameters.get(parameterInput.parameter());
                 yield fileListFromValue(name, context, pathSensitivity, parameterInput, value);
             }
-            case Input.TaskInput taskInput -> {
+            case Input.GeneralTaskInput taskInput -> {
                 if (pathSensitivity != PathSensitivity.NONE) {
                     throw new IllegalArgumentException("Cannot use path sensitivity with task input");
                 }
-                yield new LibraryListFileListInput(name, new TaskOutputInput(name, new TaskOutput(taskInput.output().taskName(), taskInput.output().name())));
+                var output = taskInput.output(context.aliases());
+                yield new LibraryListFileListInput(name, new TaskOutputInput(name, new TaskOutput(output.taskName(), output.name())));
             }
             case Input.DirectInput directInput -> fileListFromValue(name, context, pathSensitivity, null, directInput.value());
             case Input.ListInput listInput -> {

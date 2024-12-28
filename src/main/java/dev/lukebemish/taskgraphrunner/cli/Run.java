@@ -132,7 +132,7 @@ public class Run implements Runnable {
                     launcherDirs.addAll(this.launcherDirs);
                 }
                 assetsOptions.potentialLauncherRoots(launcherDirs);
-                try (Invocation invocation = new Invocation(main.cacheDir, assetsOptions.build(), useCache)) {
+                try (Invocation invocation = new Invocation(main.cacheDir, config.aliases, assetsOptions.build(), useCache)) {
                     invocation.artifactManifest(main.makeManifest());
                     for (var model : config.tasks) {
                         var task = Task.task(model, workItem, invocation);

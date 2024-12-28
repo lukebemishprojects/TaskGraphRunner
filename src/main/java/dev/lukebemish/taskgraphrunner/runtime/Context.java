@@ -1,11 +1,13 @@
 package dev.lukebemish.taskgraphrunner.runtime;
 
+import dev.lukebemish.taskgraphrunner.model.Output;
 import dev.lukebemish.taskgraphrunner.runtime.util.LockManager;
 
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.Callable;
 import java.util.concurrent.Future;
@@ -57,6 +59,8 @@ public interface Context {
             }
         }
     }
+
+    Map<String, Output> aliases();
 
     final class AssetDownloadOptions {
         private final Path assetRoot;

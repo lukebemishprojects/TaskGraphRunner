@@ -41,6 +41,7 @@ public final class NeoFormGenerator {
         private final @Nullable Input serverJar;
         private final @Nullable Input clientMappings;
         private final @Nullable Input serverMappings;
+        private final List<AdditionalJst> additionalJst = new ArrayList<>();
 
         private Options(@Nullable String accessTransformersParameter, @Nullable String injectedInterfacesParameter, @Nullable String parchmentDataParameter, boolean recompile, boolean fixLineNumbers, Distribution distribution, @Nullable Input versionJson, @Nullable Input clientJar, @Nullable Input serverJar, @Nullable Input clientMappings, @Nullable Input serverMappings) {
             this.accessTransformersParameter = accessTransformersParameter;
@@ -72,8 +73,14 @@ public final class NeoFormGenerator {
             private @Nullable Input serverJar = null;
             private @Nullable Input clientMappings = null;
             private @Nullable Input serverMappings = null;
+            private final List<AdditionalJst> additionalJst = new ArrayList<>();
 
             private Builder() {}
+
+            public Builder additionalJst(AdditionalJst jst) {
+                this.additionalJst.add(jst);
+                return this;
+            }
 
             public Builder versionJson(Input versionJson) {
                 this.versionJson = versionJson;
@@ -131,7 +138,9 @@ public final class NeoFormGenerator {
             }
 
             public Options build() {
-                return new Options(accessTransformersParameter, injectedInterfacesParameter, parchmentDataParameter, recompile, fixLineNumbers, distribution, versionJson, clientJar, serverJar, clientMappings, serverMappings);
+                var options = new Options(accessTransformersParameter, injectedInterfacesParameter, parchmentDataParameter, recompile, fixLineNumbers, distribution, versionJson, clientJar, serverJar, clientMappings, serverMappings);
+                options.additionalJst.addAll(additionalJst);
+                return options;
             }
         }
     }
@@ -363,10 +372,10 @@ public final class NeoFormGenerator {
 
         List<Output> sourcesStubs = new ArrayList<>();
 
-        boolean useJst = options.accessTransformersParameter != null || options.injectedInterfacesParameter != null || options.parchmentDataParameter != null;
+        boolean useJst = options.accessTransformersParameter != null || options.injectedInterfacesParameter != null || options.parchmentDataParameter != null || !options.additionalJst.isEmpty();
         if (useJst) {
             var jst = new TaskModel.Jst(
-                "jstTransform",
+                "generated_jstTransform",
                 List.of(
                     new Argument.ValueInput(null, new InputValue.DirectInput(new Value.StringValue("--enable-linemapper"))),
                     new Argument.FileOutput("--line-map-out={}", "linemap", "txt")
@@ -385,10 +394,14 @@ public final class NeoFormGenerator {
             if (options.parchmentDataParameter != null) {
                 jst.parchmentData = new MappingsSource.File(new Input.ParameterInput(options.parchmentDataParameter));
             }
+            for (var additionalJst : options.additionalJst) {
+                jst.executionClasspath.addAll(additionalJst.classpath());
+                jst.args.addAll(additionalJst.arguments());
+            }
 
             config.tasks.add(jst);
-            sourcesTask = new Output("jstTransform", "output");
-            sourcesStubs.add(new Output("jstTransform", "stubs"));
+            sourcesTask = new Output("generated_jstTransform", "output");
+            sourcesStubs.add(new Output("generated_jstTransform", "stubs"));
         }
 
         Output binariesTask = new Output("rename", "output");
@@ -413,17 +426,36 @@ public final class NeoFormGenerator {
             );
             config.tasks.add(recompile);
             binariesTask = new Output("recompile", "output");
-        }
+        } else {
+            if (options.parchmentDataParameter != null) {
+                // TODO: apply binary-level parchment transforms, for better debug info
+            }
 
-        if (!options.recompile && options.injectedInterfacesParameter != null) {
-            var injectInterfaces = new TaskModel.InterfaceInjection(
-                "interfaceInjection",
-                new Input.TaskInput(binariesTask),
-                new Input.ParameterInput(options.injectedInterfacesParameter),
-                List.of(new Input.TaskInput(new Output(listLibrariesName, "output")))
-            );
-            config.tasks.add(injectInterfaces);
-            binariesTask = new Output("interfaceInjection", "output");
+            if (options.injectedInterfacesParameter != null) {
+                var injectInterfaces = new TaskModel.InterfaceInjection(
+                    "generated_interfaceInjection",
+                    new Input.TaskInput(binariesTask),
+                    new Input.ParameterInput(options.injectedInterfacesParameter),
+                    List.of(new Input.TaskInput(new Output(listLibrariesName, "output")))
+                );
+                config.tasks.add(injectInterfaces);
+                binariesTask = new Output("generated_interfaceInjection", "output");
+            }
+
+            if (options.accessTransformersParameter != null) {
+                config.tasks.add(new TaskModel.DaemonExecutedTool(
+                    "generated_accessTransformers",
+                    List.of(
+                        Argument.direct("--inJar"),
+                        new Argument.FileInput(null, new Input.TaskInput(binariesTask), PathSensitivity.NONE),
+                        Argument.direct("--outJar"),
+                        new Argument.FileOutput(null, "output", "jar"),
+                        new Argument.Zip("--atFile={}", List.of(new Input.ParameterInput(options.accessTransformersParameter)), PathSensitivity.NONE)
+                    ),
+                    new Input.DirectInput(Value.tool("accesstransformers"))
+                ));
+                binariesTask = new Output("generated_accessTransformers", "output");
+            }
         }
 
         // Capture this without line number modification if possible
@@ -435,7 +467,7 @@ public final class NeoFormGenerator {
             }
 
             var fixLineNumbers = new TaskModel.DaemonExecutedTool(
-                "fixLineNumbers",
+                "generated_fixLineNumbers",
                 List.of(
                     new Argument.ValueInput(null, new InputValue.DirectInput(new Value.StringValue("--input"))),
                     new Argument.FileInput(null, new Input.TaskInput(binariesTask), PathSensitivity.NONE),
@@ -458,18 +490,24 @@ public final class NeoFormGenerator {
             }
 
             config.tasks.add(fixLineNumbers);
-            binariesTask = new Output("fixLineNumbers", "output");
+            binariesTask = new Output("generated_fixLineNumbers", "output");
         }
 
         config.aliases.put("sources", sourcesTask);
         config.aliases.put("binary", binariesTask);
 
         // merge resources
-        config.tasks.add(new TaskModel.InjectSources(
-            "mergedResources",
-            stripTasks.stream().<Input>map(s -> new Input.TaskInput(new Output(s, "resources"))).toList()
-        ));
-        config.aliases.put("resources", new Output("mergedResources", "output"));
+        switch (options.distribution) {
+            case CLIENT -> config.aliases.put("resources", new Output("stripClient", "output"));
+            case SERVER -> config.aliases.put("resources", new Output("stripServer", "output"));
+            case JOINED -> {
+                config.tasks.add(new TaskModel.InjectSources(
+                    "generated_mergedResources",
+                    stripTasks.stream().<Input>map(s -> new Input.TaskInput(new Output(s, "resources"))).toList()
+                ));
+                config.aliases.put("resources", new Output("generated_mergedResources", "output"));
+            }
+        }
 
         return config;
     }

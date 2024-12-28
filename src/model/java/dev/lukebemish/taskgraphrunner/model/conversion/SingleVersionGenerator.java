@@ -30,6 +30,7 @@ public final class SingleVersionGenerator {
         private final @Nullable Input clientJar;
         private final @Nullable Input serverJar;
         private final @Nullable Input clientMappings;
+        private final List<AdditionalJst> additionalJst = new ArrayList<>();
 
         public enum SidedAnnotation implements Serializable {
             CPW("CPW"),
@@ -74,11 +75,17 @@ public final class SingleVersionGenerator {
             private @Nullable Input clientJar = null;
             private @Nullable Input serverJar = null;
             private @Nullable Input clientMappings = null;
+            private final List<AdditionalJst> additionalJst = new ArrayList<>();
 
             private Builder() {}
 
             public Builder accessTransformersParameter(String accessTransformersParameter) {
                 this.accessTransformersParameter = accessTransformersParameter;
+                return this;
+            }
+
+            public Builder additionalJst(AdditionalJst additionalJst) {
+                this.additionalJst.add(additionalJst);
                 return this;
             }
 
@@ -123,7 +130,9 @@ public final class SingleVersionGenerator {
             }
 
             public Options build() {
-                return new Options(accessTransformersParameter, injectedInterfacesParameter, distribution, sidedAnnotation, mappingsParameter, versionJson, clientJar, serverJar, clientMappings);
+                var options = new Options(accessTransformersParameter, injectedInterfacesParameter, distribution, sidedAnnotation, mappingsParameter, versionJson, clientJar, serverJar, clientMappings);
+                options.additionalJst.addAll(additionalJst);
+                return options;
             }
         }
     }
@@ -285,9 +294,11 @@ public final class SingleVersionGenerator {
             renameTask.args.add(Argument.direct("--reverse"));
         }
 
-        Output binariesTask = new Output("rename", "output");
+        Output originalBinaries = new Output("rename", "output");
 
-        // we do source-level AT and interface injection
+        Output binariesTask = originalBinaries;
+
+        // we do binary-level AT and interface injection
         if (options.injectedInterfacesParameter != null) {
             List<Input> classpath = new ArrayList<>();
             classpath.add(new Input.TaskInput(new Output(listLibrariesName, "output")));
@@ -345,7 +356,7 @@ public final class SingleVersionGenerator {
                 Argument.direct("--log-level=WARN"),
                 Argument.direct("-cfg"),
                 new Argument.LibrariesFile(null, decompileClasspath, new InputValue.DirectInput(new Value.StringValue("-e="))),
-                new Argument.FileInput(null, new Input.TaskInput(binariesTask), PathSensitivity.NONE),
+                new Argument.FileInput(null, new Input.TaskInput(originalBinaries), PathSensitivity.NONE),
                 new Argument.FileOutput(null, "output", "jar")
             )
         );
@@ -354,7 +365,7 @@ public final class SingleVersionGenerator {
 
         Output sourcesTask = new Output("decompile", "output");
 
-        boolean useJst = options.mappingsParameter != null;
+        boolean useJst = options.mappingsParameter != null || options.injectedInterfacesParameter != null || options.accessTransformersParameter != null || !options.additionalJst.isEmpty();
         if (useJst) {
             var jst = new TaskModel.Jst(
                 "jstTransform",
@@ -370,6 +381,16 @@ public final class SingleVersionGenerator {
             if (options.mappingsParameter != null) {
                 jst.parchmentData = new MappingsSource.File(new Input.ParameterInput(options.mappingsParameter));
             }
+            if (options.injectedInterfacesParameter != null) {
+                jst.interfaceInjection = new Input.ParameterInput(options.injectedInterfacesParameter);
+            }
+            if (options.accessTransformersParameter != null) {
+                jst.accessTransformers = new Input.ParameterInput(options.accessTransformersParameter);
+            }
+            for (var additionalJst : options.additionalJst) {
+                jst.executionClasspath.addAll(additionalJst.classpath());
+                jst.args.addAll(additionalJst.arguments());
+            }
 
             config.tasks.add(jst);
             sourcesTask = new Output("jstTransform", "output");
@@ -381,7 +402,7 @@ public final class SingleVersionGenerator {
             "fixLineNumbers",
             List.of(
                 new Argument.ValueInput(null, new InputValue.DirectInput(new Value.StringValue("--input"))),
-                new Argument.FileInput(null, new Input.TaskInput(binariesTask), PathSensitivity.NONE),
+                new Argument.FileInput(null, new Input.AliasInput("binarySourceIndependent"), PathSensitivity.NONE),
                 new Argument.ValueInput(null, new InputValue.DirectInput(new Value.StringValue("--output"))),
                 new Argument.FileOutput(null, "output", "jar")
             ),
