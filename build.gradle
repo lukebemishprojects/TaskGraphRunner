@@ -186,7 +186,7 @@ dependencies {
     implementation 'info.picocli:picocli:4.7.6'
     implementation 'org.slf4j:slf4j-simple:2.0.13'
     implementation 'org.ow2.asm:asm:9.7'
-    implementation 'net.fabricmc:mapping-io:0.6.1'
+    implementation 'dev.lukebemish.mirror.net.fabricmc:mapping-io:0.6.2'
     // For reading/writing parchment json files
     implementation "org.parchmentmc:feather:1.1.0"
     implementation "org.parchmentmc.feather:io-gson:1.1.0"

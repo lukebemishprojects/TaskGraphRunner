@@ -26,6 +26,12 @@ dependencyResolutionManagement {
                 includeGroupAndSubgroups 'org.parchmentmc'
             }
         }
+        maven {
+            url 'https://maven.lukebemish.dev/releases/'
+            content {
+                includeGroup 'dev.lukebemish.mirror.net.fabricmc'
+            }
+        }
     }
 
     repositoriesMode = RepositoriesMode.FAIL_ON_PROJECT_REPOS
