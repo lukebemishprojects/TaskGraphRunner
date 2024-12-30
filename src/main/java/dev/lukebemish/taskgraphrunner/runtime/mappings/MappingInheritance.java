@@ -20,10 +20,8 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.LinkedHashMap;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Collectors;
@@ -73,7 +71,6 @@ public final class MappingInheritance {
                     Map<String, MethodInheritance> methodsHolder = new LinkedHashMap<>();
                     Map<String, FieldInheritance> fieldsHolder = new LinkedHashMap<>();
                     AtomicBoolean enabled = new AtomicBoolean(true);
-                    Set<String> bridges = new LinkedHashSet<>();
                     var reader = new ClassReader(zis);
                     var visitor = new ClassVisitor(Opcodes.ASM9) {
                         @Override
@@ -100,28 +97,15 @@ public final class MappingInheritance {
                         @Override
                         public MethodVisitor visitMethod(int access, String name, String descriptor, String signature, String[] exceptions) {
                             if (enabled.getPlain()) {
-                                boolean isBridge = (access & Opcodes.ACC_BRIDGE) != 0;
-                                if (isBridge) {
-                                    bridges.add(name+descriptor);
-                                }
+                                // We don't check for bridge methods here -- no reliable way to detect them without parsing the code
                                 var heritable = !Modifier.isPrivate(access) && !Modifier.isStatic(access);
-                                methodsHolder.put(name+descriptor, new MethodInheritance(name, descriptor, null, null, heritable));
+                                methodsHolder.put(name+descriptor, new MethodInheritance(name, descriptor, null, heritable));
                             }
                             return super.visitMethod(access, name, descriptor, signature, exceptions);
                         }
                     };
                     reader.accept(visitor, ClassReader.SKIP_DEBUG | ClassReader.SKIP_CODE | ClassReader.SKIP_FRAMES);
                     if (enabled.getPlain()) {
-                        // Is this the _best_ heuristic? Eh. But it works, in theory
-                        for (var bridge : bridges) {
-                            var bridgeMethod = methodsHolder.get(bridge);
-                            var name = bridgeMethod.name;
-                            var eligible = methodsHolder.values().stream().filter(m -> !bridges.contains(m.name + m.descriptor) && m.name.equals(name)).toList();
-                            if (eligible.size() == 1) {
-                                var method = eligible.getFirst();
-                                methodsHolder.put(bridge, new MethodInheritance(bridgeMethod.name, bridgeMethod.descriptor, null, method.descriptor, method.heritable));
-                            }
-                        }
                         map.put(nameHolder.getPlain(), new ClassInheritance(nameHolder.getPlain(), parentHolder.getPlain(), interfacesHolder, methodsHolder, fieldsHolder));
                     }
                 }
@@ -191,7 +175,7 @@ public final class MappingInheritance {
     }
 
     private record MethodInheritance(String name, String descriptor, @Nullable String from,
-                                     @Nullable String bridgeDescriptor, boolean heritable) {
+                                     boolean heritable) {
 
         private MethodInheritance withParents(ClassInheritance classInheritance, MappingInheritance mappingInheritance) {
             if (from != null || !heritable) {
@@ -199,7 +183,7 @@ public final class MappingInheritance {
             }
             String found = findMethod(mappingInheritance, classInheritance.name, name, descriptor);
             if (found != null && !found.equals(classInheritance.name)) {
-                return new MethodInheritance(name, descriptor, found, bridgeDescriptor, true);
+                return new MethodInheritance(name, descriptor, found, true);
             }
             return this;
         }
@@ -231,22 +215,12 @@ public final class MappingInheritance {
             if (newFrom != null) {
                 newFrom = tree.mapClassName(from, namespace);
             }
-            String newBridgeDescriptor = bridgeDescriptor;
-            if (newBridgeDescriptor != null) {
-                newBridgeDescriptor = tree.mapDesc(bridgeDescriptor, namespace);
-            }
             String newName = null;
             var classMapping = tree.getClass(clazz.name);
             if (classMapping != null) {
                 var methodMapping = classMapping.getMethod(name, descriptor);
                 if (methodMapping != null) {
                     newName = methodMapping.getDstName(namespace);
-                }
-                if (newName == null && bridgeDescriptor != null) {
-                    methodMapping = classMapping.getMethod(name, bridgeDescriptor);
-                    if (methodMapping != null) {
-                        newName = methodMapping.getDstName(namespace);
-                    }
                 }
             }
             if (newName == null) {
@@ -261,11 +235,11 @@ public final class MappingInheritance {
             if (newName == null) {
                 newName = name;
             }
-            return new MethodInheritance(newName, newDescriptor, newFrom, newBridgeDescriptor, heritable);
+            return new MethodInheritance(newName, newDescriptor, newFrom, heritable);
         }
 
         public void fill(ClassInheritance classInheritance, MappingTreeView input, FlatMappingVisitor output) throws IOException {
-            if (from == null && bridgeDescriptor == null) {
+            if (from == null) {
                 return;
             }
             var thisClass = input.getClass(classInheritance.name);
@@ -280,27 +254,15 @@ public final class MappingInheritance {
                     }
                 }
             }
-            if (from != null) {
-                var fromClass = input.getClass(from);
-                if (fromClass != null) {
-                    var fromMethod = fromClass.getMethod(name, descriptor);
-                    if (fromMethod != null && IntStream.range(0, input.getMaxNamespaceId()).anyMatch(i -> fromMethod.getDstName(i) != null)) {
-                        output.visitMethod(classInheritance.name(), name, descriptor, dstNames(input, fromMethod));
-                        if (inheritArgs) {
-                            for (var arg : fromMethod.getArgs()) {
-                                output.visitMethodArg(classInheritance.name(), name, descriptor, arg.getArgPosition(), arg.getLvIndex(), arg.getSrcName(), dstNames(input, arg));
-                            }
+            var fromClass = input.getClass(from);
+            if (fromClass != null) {
+                var fromMethod = fromClass.getMethod(name, descriptor);
+                if (fromMethod != null && IntStream.range(0, input.getMaxNamespaceId()).anyMatch(i -> fromMethod.getDstName(i) != null)) {
+                    output.visitMethod(classInheritance.name(), name, descriptor, dstNames(input, fromMethod));
+                    if (inheritArgs) {
+                        for (var arg : fromMethod.getArgs()) {
+                            output.visitMethodArg(classInheritance.name(), name, descriptor, arg.getArgPosition(), arg.getLvIndex(), arg.getSrcName(), dstNames(input, arg));
                         }
-                        return;
-                    }
-                }
-            }
-            // May not be necessary with intermediary -- but hey, let's be safe if we can be.
-            if (thisClass != null) {
-                if (bridgeDescriptor != null) {
-                    var bridgeMethod = thisClass.getMethod(name, bridgeDescriptor);
-                    if (bridgeMethod != null && IntStream.range(0, input.getMaxNamespaceId()).anyMatch(i -> bridgeMethod.getDstName(i) != null)) {
-                        output.visitMethod(classInheritance.name(), name, descriptor, dstNames(input, bridgeMethod));
                     }
                 }
             }
