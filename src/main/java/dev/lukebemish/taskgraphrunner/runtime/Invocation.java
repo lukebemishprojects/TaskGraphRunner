@@ -212,7 +212,7 @@ public class Invocation implements Context, AutoCloseable {
                     JsonArray outputs = new JsonArray();
                     singleTask.addProperty("state", taskStatePath(task).toAbsolutePath().toString());
                     for (var output : task.outputTypes().entrySet()) {
-                        outputs.add(taskOutputPath(task, output.getKey()).toAbsolutePath().toString());
+                        outputs.add(existingTaskOutput(task, output.getKey()).toAbsolutePath().toString());
                     }
                     singleTask.add("outputs", outputs);
                     executed.add(task.name(), singleTask);
