@@ -252,6 +252,8 @@ public final class SingleVersionGenerator {
             }
         };
 
+        config.aliases.put("binaryObf", merged);
+
         List<Output> additionalClasspath = new ArrayList<>();
 
         // rename the merged jar
@@ -377,6 +379,9 @@ public final class SingleVersionGenerator {
                 List.of(new Input.TaskInput(new Output(listLibrariesName, "output"))),
                 List.of(new Input.ListInput(List.of(new Input.DirectInput(Value.tool("linemapper-jst")))))
             );
+            jst.parallelism = "jst";
+
+            jst.binaryInput = new Input.TaskInput(originalBinaries);
 
             if (options.mappingsParameter != null) {
                 jst.parchmentData = new MappingsSource.File(new Input.ParameterInput(options.mappingsParameter));

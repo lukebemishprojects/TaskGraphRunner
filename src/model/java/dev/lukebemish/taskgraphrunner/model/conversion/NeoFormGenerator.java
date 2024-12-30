@@ -384,6 +384,9 @@ public final class NeoFormGenerator {
                 List.of(new Input.TaskInput(new Output(listLibrariesName, "output"))),
                 List.of(new Input.ListInput(List.of(new Input.DirectInput(Value.tool("linemapper-jst")))))
             );
+            jst.parallelism = "jst";
+
+            jst.binaryInput = new Input.TaskInput(new Output("rename", "output"));
 
             if (options.accessTransformersParameter != null) {
                 jst.accessTransformers = new Input.ParameterInput(options.accessTransformersParameter);

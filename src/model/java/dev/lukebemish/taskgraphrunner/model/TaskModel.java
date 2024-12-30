@@ -110,6 +110,7 @@ public sealed abstract class TaskModel {
     public static final class TransformMappings extends TaskModel {
         public MappingsFormat format;
         public MappingsSource source;
+        public @Nullable Input sourceJar = null;
 
         public TransformMappings(String name, MappingsFormat format, MappingsSource source) {
             super(name);
@@ -119,7 +120,10 @@ public sealed abstract class TaskModel {
 
         @Override
         public Stream<InputHandle> inputs() {
-            return source.inputs();
+            return Stream.concat(
+                source.inputs(),
+                Stream.of(InputHandle.of(() -> sourceJar, i -> this.sourceJar = i))
+            );
         }
 
         private static final class Specialized extends FieldAdapter<TransformMappings> {
@@ -129,9 +133,11 @@ public sealed abstract class TaskModel {
                 var parallelism = builder.field("parallelism", task -> task.parallelism, String.class);
                 var format = builder.field("format", task -> task.format, MappingsFormat.class);
                 var source = builder.field("source", task -> task.source, MappingsSource.class);
+                var sourceJar = builder.field("sourceJar", task -> task.sourceJar, Input.class);
                 return values -> {
                     var task = new TransformMappings(values.get(name), values.get(format), values.get(source));
                     task.parallelism = values.get(parallelism);
+                    task.sourceJar = values.get(sourceJar);
                     return task;
                 };
             }
@@ -185,6 +191,7 @@ public sealed abstract class TaskModel {
         public @Nullable Input accessTransformers = null;
         public @Nullable Input interfaceInjection = null;
         public @Nullable MappingsSource parchmentData = null;
+        public @Nullable Input binaryInput = null;
         public boolean classpathScopedJvm = false;
 
         public Jst(String name, List<Argument> args, Input input, List<Input> classpath, @Nullable List<Input> executionClasspath) {
@@ -202,6 +209,7 @@ public sealed abstract class TaskModel {
             return Stream.of(
                 Stream.of(
                     InputHandle.of(() -> input, i -> this.input = i),
+                    InputHandle.of(() -> binaryInput, i -> this.binaryInput = i),
                     InputHandle.of(() -> accessTransformers, i -> this.accessTransformers = i),
                     InputHandle.of(() -> interfaceInjection, i -> this.interfaceInjection = i)
                 ).filter(h -> h.getInput() != null),
@@ -225,6 +233,7 @@ public sealed abstract class TaskModel {
                 var interfaceInjection = builder.field("interfaceInjection", task -> task.interfaceInjection, Input.class);
                 var parchmentData = builder.field("parchmentData", task -> task.parchmentData, MappingsSource.class);
                 var classpathScopedJvm = builder.field("classpathScopedJvm", task -> task.classpathScopedJvm, Boolean.class);
+                var binaryInput = builder.field("binaryInput", task -> task.binaryInput, Input.class);
                 return values -> {
                     var jst = new Jst(values.get(name), values.get(args), values.get(input), values.get(classpath), values.get(jstClasspath));
                     jst.accessTransformers = values.get(accessTransformers);
@@ -232,6 +241,7 @@ public sealed abstract class TaskModel {
                     jst.parchmentData = values.get(parchmentData);
                     jst.parallelism = values.get(parallelism);
                     jst.classpathScopedJvm = values.get(classpathScopedJvm) == Boolean.TRUE;
+                    jst.binaryInput = values.get(binaryInput);
                     return jst;
                 };
             }

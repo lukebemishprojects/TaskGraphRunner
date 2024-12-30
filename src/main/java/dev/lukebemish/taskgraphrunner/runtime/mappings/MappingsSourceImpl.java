@@ -30,6 +30,8 @@ import java.util.zip.ZipFile;
 public sealed interface MappingsSourceImpl {
     MappingTree makeMappings(Context context);
 
+    MappingsUtil.MappingProvider makeMappingsFillInheritance(Context context);
+
     List<TaskInput> inputs();
 
     interface MappingConsumer extends AutoCloseable {
@@ -121,6 +123,19 @@ public sealed interface MappingsSourceImpl {
         }
 
         @Override
+        public MappingsUtil.MappingProvider makeMappingsFillInheritance(Context context) {
+            return inheritance -> MappingsUtil.filledChain(inheritance, files.paths(context).stream()
+                .map(p -> {
+                    try {
+                        return MappingsUtil.provider(loadMappings(p));
+                    } catch (IOException e) {
+                        throw new UncheckedIOException(e);
+                    }
+                })
+                .toList());
+        }
+
+        @Override
         public List<TaskInput> inputs() {
             return List.of(label, files);
         }
@@ -173,6 +188,13 @@ public sealed interface MappingsSourceImpl {
         }
 
         @Override
+        public MappingsUtil.MappingProvider makeMappingsFillInheritance(Context context) {
+            return inheritance -> MappingsUtil.filledChain(inheritance, sources.stream()
+                .map(s -> s.makeMappingsFillInheritance(context))
+                .toList());
+        }
+
+        @Override
         public List<TaskInput> inputs() {
             var list = sources.stream()
                 .flatMap(source -> source.inputs().stream())
@@ -205,6 +227,19 @@ public sealed interface MappingsSourceImpl {
         }
 
         @Override
+        public MappingsUtil.MappingProvider makeMappingsFillInheritance(Context context) {
+            return inheritance -> MappingsUtil.filledMerge(inheritance, files.paths(context).stream()
+                .map(p -> {
+                    try {
+                        return MappingsUtil.provider(loadMappings(p));
+                    } catch (IOException e) {
+                        throw new UncheckedIOException(e);
+                    }
+                })
+                .toList());
+        }
+
+        @Override
         public List<TaskInput> inputs() {
             return List.of(label, files);
         }
@@ -223,6 +258,13 @@ public sealed interface MappingsSourceImpl {
         public MappingTree makeMappings(Context context) {
             return MappingsUtil.merge(sources.stream()
                 .map(s -> s.makeMappings(context))
+                .toList());
+        }
+
+        @Override
+        public MappingsUtil.MappingProvider makeMappingsFillInheritance(Context context) {
+            return inheritance -> MappingsUtil.filledMerge(inheritance, sources.stream()
+                .map(s -> s.makeMappingsFillInheritance(context))
                 .toList());
         }
 
@@ -249,6 +291,15 @@ public sealed interface MappingsSourceImpl {
         public MappingTree makeMappings(Context context) {
             MappingTree mappings = source.makeMappings(context);
             return MappingsUtil.reverse(mappings);
+        }
+
+        @Override
+        public MappingsUtil.MappingProvider makeMappingsFillInheritance(Context context) {
+            var sourceMappings = source.makeMappingsFillInheritance(context);
+            return inheritance -> {
+                MappingTree mappings = sourceMappings.make(inheritance);
+                return MappingsUtil.reverse(mappings);
+            };
         }
 
         @Override
@@ -290,6 +341,12 @@ public sealed interface MappingsSourceImpl {
             } catch (IOException e) {
                 throw new UncheckedIOException(e);
             }
+        }
+
+        @Override
+        public MappingsUtil.MappingProvider makeMappingsFillInheritance(Context context) {
+            var mappings = makeMappings(context);
+            return MappingsUtil.provider(mappings);
         }
 
         @Override

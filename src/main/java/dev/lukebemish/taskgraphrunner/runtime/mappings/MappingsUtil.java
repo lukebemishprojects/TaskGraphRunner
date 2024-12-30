@@ -1,34 +1,28 @@
 package dev.lukebemish.taskgraphrunner.runtime.mappings;
 
-import net.fabricmc.mappingio.FlatMappingVisitor;
 import net.fabricmc.mappingio.MappedElementKind;
 import net.fabricmc.mappingio.MappingVisitor;
 import net.fabricmc.mappingio.adapter.ForwardingMappingVisitor;
 import net.fabricmc.mappingio.adapter.MappingDstNsReorder;
+import net.fabricmc.mappingio.adapter.MappingNsCompleter;
 import net.fabricmc.mappingio.adapter.MappingNsRenamer;
 import net.fabricmc.mappingio.adapter.MappingSourceNsSwitch;
 import net.fabricmc.mappingio.tree.MappingTree;
-import net.fabricmc.mappingio.tree.MappingTreeView;
 import net.fabricmc.mappingio.tree.MemoryMappingTree;
-import org.jetbrains.annotations.Nullable;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
-import java.util.Arrays;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 
 public final class MappingsUtil {
     private MappingsUtil() {}
 
     public static MappingTree reverse(MappingTree tree) {
-        if (tree.getMaxNamespaceId() < 0) {
-            return tree;
-        }
         var newTree = new MemoryMappingTree();
-        var reverser = new MappingSourceNsSwitch(newTree, tree.getDstNamespaces().getFirst(), true);
+        var reverser = tree.getDstNamespaces().isEmpty() ? newTree : new MappingSourceNsSwitch(newTree, tree.getDstNamespaces().getFirst(), true);
         try {
             tree.accept(reverser);
         } catch (IOException e) {
@@ -37,7 +31,7 @@ public final class MappingsUtil {
         return newTree;
     }
 
-    public static MappingTree merge(List<? extends MappingTreeView> trees) {
+    public static MappingTree merge(List<? extends MappingTree> trees) {
         var newTree = new MemoryMappingTree();
         for (var tree : trees) {
             MappingVisitor visitor = newTree;
@@ -59,9 +53,45 @@ public final class MappingsUtil {
         return newTree;
     }
 
-    public static MappingTree chain(List<? extends MappingTreeView> trees) {
+    public interface MappingProvider {
+        MappingTree make(MappingInheritance inheritance) throws IOException;
+    }
+
+    public static MappingTree filledMerge(MappingInheritance inheritance, List<MappingProvider> trees) {
+        try {
+            var appliedTrees = new ArrayList<MappingTree>(trees.size());
+            for (var tree : trees) {
+                appliedTrees.add(tree.make(inheritance));
+            }
+            return merge(appliedTrees);
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
+    }
+
+    public static MappingProvider provider(MappingTree tree) {
+        return inheritance -> inheritance.fill(tree);
+    }
+
+    public static MappingTree filledChain(MappingInheritance inheritance, List<MappingProvider> trees) {
+        try {
+            var tree = trees.getFirst().make(inheritance);
+            inheritance = inheritance.remap(tree, tree.getMaxNamespaceId() - 1);
+            for (var other : trees.subList(1, trees.size())) {
+                var mappings = other.make(inheritance);
+                tree = chain(List.of(tree, mappings));
+                inheritance = inheritance.remap(mappings, mappings.getMaxNamespaceId() - 1);
+            }
+            return tree;
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
+    }
+
+    public static MappingTree chain(List<? extends MappingTree> trees) {
         // This is a *non-transitive* chain, since some mappings (looking at you, intermediary) just... leave stuff out.
         // Thus, its results may not be the most intuitive if you expect mapping "composition" or the like
+        // This can be avoided by "completing" mappings by their inheritance
         var newTree = new MemoryMappingTree();
         newTree.setSrcNamespace("namespace0");
         int i = 0;
@@ -92,39 +122,12 @@ public final class MappingsUtil {
 
         var trimmedTree = new MemoryMappingTree();
         trimmedTree.setSrcNamespace("left");
-        var flatVisitor = FlatMappingVisitor.fromRegularVisitor(trimmedTree);
-        flatVisitor = new ForwardingFlatVisitor(flatVisitor) {
-            private boolean checkNames(@Nullable String[] dstNames) {
-                return dstNames != null && dstNames.length > 0 && Arrays.stream(dstNames).allMatch(Objects::nonNull);
-            }
-
-            @Override
-            public boolean visitClass(String srcName, @Nullable String[] dstNames) throws IOException {
-                return checkNames(dstNames) && super.visitClass(srcName, dstNames);
-            }
-
-            @Override
-            public boolean visitMethod(String srcClsName, String srcName, @Nullable String srcDesc, @Nullable String[] dstClsNames, @Nullable String[] dstNames, @Nullable String[] dstDescs) throws IOException {
-                return checkNames(dstNames) && super.visitMethod(srcClsName, srcName, srcDesc, dstClsNames, dstNames, dstDescs);
-            }
-
-            @Override
-            public boolean visitField(String srcClsName, String srcName, @Nullable String srcDesc, @Nullable String[] dstClsNames, @Nullable String[] dstNames, @Nullable String[] dstDescs) throws IOException {
-                return checkNames(dstNames) && super.visitField(srcClsName, srcName, srcDesc, dstClsNames, dstNames, dstDescs);
-            }
-
-            @Override
-            public boolean visitMethodArg(String srcClsName, String srcMethodName, @Nullable String srcMethodDesc, int argPosition, int lvIndex, @Nullable String srcName, @Nullable String[] dstClsNames, @Nullable String[] dstMethodNames, @Nullable String[] dstMethodDescs, String[] dstNames) throws IOException {
-                return checkNames(dstNames) && super.visitMethodArg(srcClsName, srcMethodName, srcMethodDesc, argPosition, lvIndex, srcName, dstClsNames, dstMethodNames, dstMethodDescs, dstNames);
-            }
-
-            @Override
-            public boolean visitMethodVar(String srcClsName, String srcMethodName, @Nullable String srcMethodDesc, int lvtRowIndex, int lvIndex, int startOpIdx, int endOpIdx, @Nullable String srcName, @Nullable String[] dstClsNames, @Nullable String[] dstMethodNames, @Nullable String[] dstMethodDescs, String[] dstNames) throws IOException {
-                return checkNames(dstNames) && super.visitMethodVar(srcClsName, srcMethodName, srcMethodDesc, lvtRowIndex, lvIndex, startOpIdx, endOpIdx, srcName, dstClsNames, dstMethodNames, dstMethodDescs, dstNames);
-            }
-        };
-        MappingVisitor trimmedVisitor = new MappingDstNsReorder(flatVisitor.asRegularVisitor(), List.of("right"));
+        MappingVisitor trimmedVisitor = MappingDropMissingSrcVisitor.create(trimmedTree);
+        trimmedVisitor = new MappingDstNsReorder(trimmedVisitor, List.of("right"));
         trimmedVisitor = new MappingNsRenamer(trimmedVisitor, Map.of("namespace0", "left", "namespace"+i, "right"));
+        for (i = trees.size(); i > 0; i--) {
+            trimmedVisitor = new MappingNsCompleter(trimmedVisitor, Map.of("namespace" + i, "namespace" + (i - 1)));
+        }
         try {
             newTree.accept(trimmedVisitor);
         } catch (IOException e) {

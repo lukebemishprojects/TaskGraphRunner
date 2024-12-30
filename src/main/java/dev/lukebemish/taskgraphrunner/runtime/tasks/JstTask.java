@@ -7,10 +7,12 @@ import dev.lukebemish.taskgraphrunner.runtime.Context;
 import dev.lukebemish.taskgraphrunner.runtime.Task;
 import dev.lukebemish.taskgraphrunner.runtime.TaskInput;
 import dev.lukebemish.taskgraphrunner.runtime.execution.ToolDaemonExecutor;
+import dev.lukebemish.taskgraphrunner.runtime.mappings.MappingInheritance;
 import dev.lukebemish.taskgraphrunner.runtime.mappings.MappingsSourceImpl;
 import dev.lukebemish.taskgraphrunner.runtime.mappings.MappingsUtil;
 import dev.lukebemish.taskgraphrunner.runtime.mappings.ParchmentMappingWriter;
 import dev.lukebemish.taskgraphrunner.runtime.util.Tools;
+import net.fabricmc.mappingio.tree.MappingTree;
 import org.jspecify.annotations.Nullable;
 
 import java.io.File;
@@ -34,6 +36,7 @@ public class JstTask extends Task {
     private final TaskInput.@Nullable FileListInput accessTransformers;
     private final TaskInput.@Nullable FileListInput interfaceInjection;
     private final @Nullable MappingsSourceImpl parchmentMappingsSource;
+    private final TaskInput.@Nullable HasFileInput binaryInput;
     private final List<TaskInput> inputs;
     private final List<ArgumentProcessor.Arg> args;
     private final Map<String, String> outputExtensions;
@@ -90,6 +93,11 @@ public class JstTask extends Task {
 
         this.inputs.addAll(args.stream().flatMap(ArgumentProcessor.Arg::inputs).toList());
 
+        this.binaryInput = model.binaryInput == null ? null : TaskInput.file("binaryInput", model.binaryInput, workItem, context, PathSensitivity.NONE);
+        if (this.binaryInput != null) {
+            inputs.add(this.binaryInput);
+        }
+
         this.classpathScopedJvm = model.classpathScopedJvm;
     }
 
@@ -121,7 +129,18 @@ public class JstTask extends Task {
             // Might eventually look at making this configurable
             command.add("--parchment-conflict-prefix=p");
             var parchmentFile = workingDirectory.resolve("parchment.json");
-            var mappings = MappingsUtil.fixInnerClasses(parchmentMappingsSource.makeMappings(context));
+            MappingTree mappings;
+            if (binaryInput == null) {
+                mappings = MappingsUtil.fixInnerClasses(parchmentMappingsSource.makeMappings(context));
+            } else {
+                try {
+                    var path = binaryInput.path(context);
+                    var inheritance = MappingInheritance.read(path);
+                    mappings = MappingsUtil.fixInnerClasses(parchmentMappingsSource.makeMappingsFillInheritance(context).make(inheritance));
+                } catch (IOException e) {
+                    throw new UncheckedIOException(e);
+                }
+            }
             try (var writer = Files.newBufferedWriter(parchmentFile, StandardCharsets.UTF_8);
                  var mappingWriter = new ParchmentMappingWriter(writer)) {
                 mappingWriter.accept(mappings);

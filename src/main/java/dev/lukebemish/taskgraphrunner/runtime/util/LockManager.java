@@ -18,6 +18,7 @@ import java.nio.file.attribute.FileTime;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -34,7 +35,36 @@ public class LockManager {
 
     private static final Map<String, Semaphore> parallelLocks = new ConcurrentHashMap<>();
 
+    private static final Map<String, String> parallelismGroups;
+
+    static {
+        String groupsProperty = System.getProperty("dev.lukebemish.taskgraphrunner.parallelism.groups", "");
+        Map<String, String> map = new LinkedHashMap<>();
+        for (var group : groupsProperty.split(":")) {
+            if (!group.isEmpty()) {
+                var parts = group.split("\\+");
+                if (parts.length > 1) {
+                    for (var part : parts) {
+                        map.put(part, group);
+                    }
+                }
+            }
+        }
+        parallelismGroups = map;
+    }
+
     private static int findParallelism(String key) {
+        if (parallelismGroups.containsKey(key)) {
+            int maxInt = 0;
+            for (var part : parallelismGroups.get(key).split("\\+")) {
+                int value = findParallelism(part);
+                if (value > maxInt) {
+                    maxInt = value;
+                }
+            }
+            return maxInt;
+        }
+
         int result = Integer.getInteger("dev.lukebemish.taskgraphrunner.parallelism." + key, 1);
         if (result < 1) {
             throw new IllegalArgumentException("Property dev.lukebemish.taskgraphrunner.parallelism."+key+" must be positive");
@@ -43,6 +73,8 @@ public class LockManager {
     }
 
     public void enforcedParallelism(Context context, String key, Runnable action) {
+        key = parallelismGroups.getOrDefault(key, key);
+
         var parallelism = findParallelism(key);
         var semaphore = parallelLocks.computeIfAbsent(key, k -> new Semaphore(parallelism));
         try {
