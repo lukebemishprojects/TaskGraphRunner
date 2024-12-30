@@ -1,6 +1,7 @@
 package dev.lukebemish.taskgraphrunner.runtime.mappings;
 
 import net.fabricmc.mappingio.FlatMappingVisitor;
+import net.fabricmc.mappingio.adapter.FlatAsRegularMappingVisitor;
 import net.fabricmc.mappingio.adapter.RegularAsFlatMappingVisitor;
 import net.fabricmc.mappingio.tree.MappingTree;
 import net.fabricmc.mappingio.tree.MappingTreeView;
@@ -13,9 +14,11 @@ import org.objectweb.asm.MethodVisitor;
 import org.objectweb.asm.Opcodes;
 
 import java.io.IOException;
+import java.lang.reflect.Modifier;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -37,12 +40,13 @@ public final class MappingInheritance {
 
     public MappingTree fill(MappingTreeView input) throws IOException {
         var output = new MemoryMappingTree();
-        input.accept(output);
-        output.visitNamespaces(input.getSrcNamespace(), input.getDstNamespaces());
+        FlatMappingVisitor visitor = new RegularAsFlatMappingVisitor(output);
+        input.accept(new FlatAsRegularMappingVisitor(visitor));
+        visitor.visitNamespaces(input.getSrcNamespace(), input.getDstNamespaces());
         for (var classInheritance : classes.values()) {
-            classInheritance.fill(input, new RegularAsFlatMappingVisitor(output));
+            classInheritance.fill(input, visitor);
         }
-        output.visitEnd();
+        visitor.visitEnd();
         return output;
     }
 
@@ -50,9 +54,7 @@ public final class MappingInheritance {
         var newClasses = classes.entrySet().stream().collect(Collectors.toMap(e -> {
             var newName = tree.mapClassName(e.getKey(), namespace);
             return newName == null ? e.getKey() : newName;
-        }, e -> {
-            return e.getValue().remap(tree, namespace);
-        }));
+        }, e -> e.getValue().remap(tree, namespace)));
         return new MappingInheritance(newClasses);
     }
 
@@ -64,7 +66,7 @@ public final class MappingInheritance {
             while ((entry = zis.getNextEntry()) != null) {
                 var entryName = entry.getName();
                 if (!entryName.startsWith("META-INF/") && entryName.endsWith(".class")) {
-                    var expectedDotsClassName = entryName.substring(0, entryName.length() - ".class".length()).replace('/', '.');
+                    var expectedDotsClassName = entryName.substring(0, entryName.length() - ".class".length());
                     AtomicReference<String> nameHolder = new AtomicReference<>();
                     AtomicReference<String> parentHolder = new AtomicReference<>();
                     List<String> interfacesHolder = new ArrayList<>();
@@ -80,11 +82,9 @@ public final class MappingInheritance {
                                 enabled.set(false);
                             }
                             if (enabled.getPlain()) {
-                                nameHolder.setPlain(name.replace('.', '/'));
-                                parentHolder.setPlain(superName.replace('.', '/'));
-                                for (var interfaceName : interfaces) {
-                                    interfacesHolder.add(interfaceName.replace('.', '/'));
-                                }
+                                nameHolder.setPlain(name);
+                                parentHolder.setPlain(superName);
+                                interfacesHolder.addAll(Arrays.asList(interfaces));
                             }
                             super.visit(version, access, name, signature, superName, interfaces);
                         }
@@ -104,7 +104,8 @@ public final class MappingInheritance {
                                 if (isBridge) {
                                     bridges.add(name+descriptor);
                                 }
-                                methodsHolder.put(name+descriptor, new MethodInheritance(name, descriptor, null, null));
+                                var heritable = !Modifier.isPrivate(access) && !Modifier.isStatic(access);
+                                methodsHolder.put(name+descriptor, new MethodInheritance(name, descriptor, null, null, heritable));
                             }
                             return super.visitMethod(access, name, descriptor, signature, exceptions);
                         }
@@ -118,7 +119,7 @@ public final class MappingInheritance {
                             var eligible = methodsHolder.values().stream().filter(m -> !bridges.contains(m.name + m.descriptor) && m.name.equals(name)).toList();
                             if (eligible.size() == 1) {
                                 var method = eligible.getFirst();
-                                methodsHolder.put(bridge, new MethodInheritance(bridgeMethod.name, bridgeMethod.descriptor, null, method.descriptor));
+                                methodsHolder.put(bridge, new MethodInheritance(bridgeMethod.name, bridgeMethod.descriptor, null, method.descriptor, method.heritable));
                             }
                         }
                         map.put(nameHolder.getPlain(), new ClassInheritance(nameHolder.getPlain(), parentHolder.getPlain(), interfacesHolder, methodsHolder, fieldsHolder));
@@ -190,20 +191,20 @@ public final class MappingInheritance {
     }
 
     private record MethodInheritance(String name, String descriptor, @Nullable String from,
-                                     @Nullable String bridgeDescriptor) {
+                                     @Nullable String bridgeDescriptor, boolean heritable) {
 
         private MethodInheritance withParents(ClassInheritance classInheritance, MappingInheritance mappingInheritance) {
-            if (from != null && bridgeDescriptor != null) {
+            if (from != null || !heritable) {
                 return this;
             }
             String found = findMethod(mappingInheritance, classInheritance.name, name, descriptor);
             if (found != null && !found.equals(classInheritance.name)) {
-                return new MethodInheritance(name, descriptor, found, bridgeDescriptor);
+                return new MethodInheritance(name, descriptor, found, bridgeDescriptor, true);
             }
             return this;
         }
 
-        private String findMethod(MappingInheritance mappingInheritance, String className, String name, String descriptor) {
+        private static String findMethod(MappingInheritance mappingInheritance, String className, String name, String descriptor) {
             var inheritance = mappingInheritance.classes.get(className);
             if (inheritance != null) {
                 var found = findMethod(mappingInheritance, inheritance.parent, name, descriptor);
@@ -216,7 +217,8 @@ public final class MappingInheritance {
                         return found;
                     }
                 }
-                if (inheritance.methods.get(name + descriptor) != null) {
+                var foundMethod = inheritance.methods.get(name + descriptor);
+                if (foundMethod != null && foundMethod.heritable) {
                     return className;
                 }
             }
@@ -259,7 +261,7 @@ public final class MappingInheritance {
             if (newName == null) {
                 newName = name;
             }
-            return new MethodInheritance(newName, newDescriptor, newFrom, newBridgeDescriptor);
+            return new MethodInheritance(newName, newDescriptor, newFrom, newBridgeDescriptor, heritable);
         }
 
         public void fill(ClassInheritance classInheritance, MappingTreeView input, FlatMappingVisitor output) throws IOException {
@@ -277,30 +279,28 @@ public final class MappingInheritance {
                         return;
                     }
                 }
-                if (bridgeDescriptor != null) {
-                    var bridgeMethod = thisClass.getMethod(name, bridgeDescriptor);
-                    if (bridgeMethod != null && IntStream.range(0, input.getMaxNamespaceId()).anyMatch(i -> bridgeMethod.getDstName(i) != null)) {
-                        output.visitMethod(thisClass.getSrcName(), name, descriptor, dstNames(input, bridgeMethod));
+            }
+            if (from != null) {
+                var fromClass = input.getClass(from);
+                if (fromClass != null) {
+                    var fromMethod = fromClass.getMethod(name, descriptor);
+                    if (fromMethod != null && IntStream.range(0, input.getMaxNamespaceId()).anyMatch(i -> fromMethod.getDstName(i) != null)) {
+                        output.visitMethod(classInheritance.name(), name, descriptor, dstNames(input, fromMethod));
                         if (inheritArgs) {
-                            for (var arg : bridgeMethod.getArgs()) {
-                                output.visitMethodArg(thisClass.getSrcName(), name, descriptor, arg.getArgPosition(), arg.getLvIndex(), arg.getSrcName(), dstNames(input, arg));
+                            for (var arg : fromMethod.getArgs()) {
+                                output.visitMethodArg(classInheritance.name(), name, descriptor, arg.getArgPosition(), arg.getLvIndex(), arg.getSrcName(), dstNames(input, arg));
                             }
                         }
                         return;
                     }
                 }
             }
-            if (from != null) {
-                var fromClass = input.getClass(from);
-                if (fromClass != null) {
-                    var fromMethod = fromClass.getMethod(name, descriptor);
-                    if (fromMethod != null) {
-                        output.visitMethod(fromClass.getSrcName(), name, descriptor, dstNames(input, fromMethod));
-                        if (inheritArgs) {
-                            for (var arg : fromMethod.getArgs()) {
-                                output.visitMethodArg(fromClass.getSrcName(), name, descriptor, arg.getArgPosition(), arg.getLvIndex(), arg.getSrcName(), dstNames(input, arg));
-                            }
-                        }
+            // May not be necessary with intermediary -- but hey, let's be safe if we can be.
+            if (thisClass != null) {
+                if (bridgeDescriptor != null) {
+                    var bridgeMethod = thisClass.getMethod(name, bridgeDescriptor);
+                    if (bridgeMethod != null && IntStream.range(0, input.getMaxNamespaceId()).anyMatch(i -> bridgeMethod.getDstName(i) != null)) {
+                        output.visitMethod(classInheritance.name(), name, descriptor, dstNames(input, bridgeMethod));
                     }
                 }
             }

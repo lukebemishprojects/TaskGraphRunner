@@ -315,7 +315,7 @@ public final class SingleVersionGenerator {
                 classpath
             ));
             binariesTask = new Output("interfaceInjection", "output");
-            additionalClasspath.add(new Output("interfaceInjection", "stubs"));
+            // We do not need to add II stubs to the decomp classpath -- they're not there yet.
         }
 
         if (options.accessTransformersParameter != null) {
