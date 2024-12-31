@@ -322,7 +322,7 @@ public final class NeoFormGenerator {
                     }
                     List<Argument> args;
                     TaskModel tool;
-                    if (function.jvmArgs().isEmpty()) {
+                    if (!function.jvmArgs().isEmpty()) {
                         TaskModel.Tool toolModel;
                         tool = toolModel = new TaskModel.Tool(step.name(), List.of());
 
@@ -547,7 +547,9 @@ public final class NeoFormGenerator {
             var function = fullConfig.functions().get(step.type());
             if (isVineflower(function)) {
                 arg = arg.replace("TRACE", "WARN");
-            } else if (arg.startsWith("-Xmx")) {
+            }
+
+            if (arg.startsWith("-Xmx")) {
                 var rest = arg.substring(4);
                 var systemProp = "dev.lukebemish.taskgraphrunner."+step.type()+".maxHeap";
                 return new Argument.Untracked("-Xmx{}", new InputValue.DirectInput(new Value.SystemPropertyValue(systemProp, rest)));
@@ -560,6 +562,7 @@ public final class NeoFormGenerator {
                 var systemProp = "dev.lukebemish.taskgraphrunner."+step.type()+".maxThreads";
                 return new Argument.Untracked("-thr={}", new InputValue.DirectInput(new Value.SystemPropertyValue(systemProp, rest)));
             }
+
             return new Argument.ValueInput(null, new InputValue.DirectInput(new Value.DirectStringValue(arg)));
         }
     }

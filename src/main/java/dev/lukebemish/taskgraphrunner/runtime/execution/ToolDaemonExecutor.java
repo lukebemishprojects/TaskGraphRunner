@@ -6,6 +6,7 @@ import dev.lukebemish.taskgraphrunner.runtime.AgentInjector;
 import dev.lukebemish.taskgraphrunner.runtime.Context;
 import dev.lukebemish.taskgraphrunner.runtime.util.FileUtils;
 import dev.lukebemish.taskgraphrunner.runtime.util.HashUtils;
+import org.jspecify.annotations.Nullable;
 import org.objectweb.asm.ClassReader;
 import org.objectweb.asm.ClassVisitor;
 import org.objectweb.asm.ClassWriter;
@@ -19,6 +20,7 @@ import java.io.DataOutputStream;
 import java.io.File;
 import java.io.IOException;
 import java.io.UncheckedIOException;
+import java.lang.ref.WeakReference;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -31,7 +33,10 @@ import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Queue;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.function.Consumer;
 import java.util.jar.JarInputStream;
 import java.util.jar.JarOutputStream;
 import java.util.stream.Collectors;
@@ -69,13 +74,13 @@ public class ToolDaemonExecutor implements AutoCloseable {
     private static final Map<String, ToolDaemonExecutor> CLASSPATH_INSTANCES = new ConcurrentHashMap<>();
 
     private final ForkedTaskExecutor executor;
-    private final Runnable onRemoval;
+    private final Consumer<ToolDaemonExecutor> onRemoval;
 
-    private ToolDaemonExecutor(Runnable onRemoval) throws IOException {
+    private ToolDaemonExecutor(Consumer<ToolDaemonExecutor> onRemoval) throws IOException {
         this(new Path[0], onRemoval);
     }
 
-    private ToolDaemonExecutor(Path[] classpath, Runnable onRemoval) throws IOException {
+    private ToolDaemonExecutor(Path[] classpath, Consumer<ToolDaemonExecutor> onRemoval) throws IOException {
         this.onRemoval = onRemoval;
         var workingDirectory = Files.createTempDirectory("taskgraphrunner");
         var tempFile = workingDirectory.resolve("execution-daemon.jar");
@@ -110,10 +115,13 @@ public class ToolDaemonExecutor implements AutoCloseable {
             .addJvmOption("-cp")
             .addJvmOption("@"+ classpathFile.toAbsolutePath())
             .taskClass("dev.lukebemish.taskgraphrunner.execution.ToolTask")
+            .onShutdownRequest(() -> onRemoval.accept(this)) // When the daemon thinks it should be shut down, we stop any new requests from going to it.
             .build();
 
         this.executor = new ForkedTaskExecutor(spec);
     }
+
+    private static final Queue<WeakReference<ToolDaemonExecutor>> TO_CLOSE = new ConcurrentLinkedQueue<>();
 
     static {
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {
@@ -123,30 +131,54 @@ public class ToolDaemonExecutor implements AutoCloseable {
             }
             CLASSPATH_INSTANCES.values().forEach(ToolDaemonExecutor::close);
             CLASSPATH_INSTANCES.clear();
+            WeakReference<ToolDaemonExecutor> ref;
+            while ((ref = TO_CLOSE.poll()) != null) {
+                var executor = ref.get();
+                if (executor != null) {
+                    executor.close();
+                }
+            }
         }));
     }
 
     @Override
     public void close() {
-        onRemoval.run();
+        onRemoval.accept(this);
         executor.close();
     }
 
     private static synchronized ToolDaemonExecutor getInstance(Path[] classpath) {
-        var key = String.join(File.pathSeparator, Arrays.stream(classpath).map(it -> it.toAbsolutePath().toString()).toArray(CharSequence[]::new));
+        var key = key(classpath);
         return CLASSPATH_INSTANCES.computeIfAbsent(key, k -> {
             try {
-                return new ToolDaemonExecutor(classpath, () -> CLASSPATH_INSTANCES.remove(key));
+                return new ToolDaemonExecutor(classpath, it -> clearInstance(it, classpath));
             } catch (IOException e) {
                 throw new RuntimeException(e);
             }
         });
     }
 
+    private static String key(Path[] classpath) {
+        return String.join(File.pathSeparator, Arrays.stream(classpath).map(it -> it.toAbsolutePath().toString()).toArray(CharSequence[]::new));
+    }
+
+    private static synchronized void clearInstance(ToolDaemonExecutor it, Path @Nullable [] classpath) {
+        if (classpath == null && INSTANCE == it) {
+            var oldInstance = INSTANCE;
+            TO_CLOSE.add(new WeakReference<>(oldInstance));
+            INSTANCE = null;
+        } else {
+            var key = key(classpath);
+            if (CLASSPATH_INSTANCES.remove(key, it)) {
+                TO_CLOSE.add(new WeakReference<>(it));
+            }
+        }
+    }
+
     private static synchronized ToolDaemonExecutor getInstance() {
         if (INSTANCE == null) {
             try {
-                INSTANCE = new ToolDaemonExecutor(() -> INSTANCE = null);
+                INSTANCE = new ToolDaemonExecutor(it -> clearInstance(it, null));
             } catch (IOException e) {
                 throw new RuntimeException(e);
             }

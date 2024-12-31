@@ -1,0 +1,26 @@
+[versions]
+
+forkedtaskexecutor = "0.1.3"
+picocli = "4.7.6"
+slf4j = "2.0.13"
+asm = "9.7"
+mappingio = "0.6.2"
+feather = "1.1.0"
+gson = "2.11.0"
+
+[libraries]
+
+forkedtaskexecutor = { group = "dev.lukebemish", name = "forkedtaskexecutor", version.ref = "forkedtaskexecutor" }
+picocli-core = { group = "info.picocli", name = "picocli", version.ref = "picocli" }
+picocli-codegen = { group = "info.picocli", name = "picocli-codegen", version.ref = "picocli" }
+
+slf4j-simple = { group = "org.slf4j", name = "slf4j-simple", version.ref = "slf4j" }
+
+asm = { group = "org.ow2.asm", name = "asm", version.ref = "asm" }
+
+mappingio = { group = "dev.lukebemish.mirror.net.fabricmc", name = "mapping-io", version.ref = "mappingio" }
+
+feather-core = { group = "org.parchmentmc", name = "feather", version.ref = "feather" }
+feather-gson = { group = "org.parchmentmc.feather", name = "io-gson", version.ref = "feather" }
+
+gson = { group = "com.google.code.gson", name = "gson", version.ref = "gson" }

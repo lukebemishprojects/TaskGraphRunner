@@ -235,14 +235,14 @@ dependencies {
     compileOnly cLibs.bundles.compileonly
     annotationProcessor cLibs.bundles.annotationprocessor
 
-    implementation 'info.picocli:picocli:4.7.6'
-    implementation 'org.slf4j:slf4j-simple:2.0.13'
-    implementation 'org.ow2.asm:asm:9.7'
-    implementation 'dev.lukebemish.mirror.net.fabricmc:mapping-io:0.6.2'
+    implementation libs.picocli.core
+    implementation libs.slf4j.simple
+    implementation libs.asm
+    implementation libs.mappingio
     // For reading/writing parchment json files
-    implementation "org.parchmentmc:feather:1.1.0"
-    implementation "org.parchmentmc.feather:io-gson:1.1.0"
-    annotationProcessor 'info.picocli:picocli-codegen:4.7.6'
+    implementation libs.feather.core
+    implementation libs.feather.gson
+    annotationProcessor libs.picocli.codegen
     implementation(project(':')) {
         capabilities {
             requireCapability("dev.lukebemish:taskgraphrunner-model")
@@ -253,32 +253,32 @@ dependencies {
             requireCapability("dev.lukebemish:taskgraphrunner-signatures")
         }
     }
-    modelApi 'com.google.code.gson:gson:2.11.0'
+    modelApi libs.gson
     modelCompileOnlyApi cLibs.jspecify
     modelCompileOnly cLibs.bundles.compileonly
     modelAnnotationProcessor cLibs.bundles.annotationprocessor
 
-    signaturesApi 'org.ow2.asm:asm:9.7'
+    signaturesApi libs.asm
     signaturesCompileOnly cLibs.bundles.compileonly
     signaturesAnnotationProcessor cLibs.bundles.annotationprocessor
 
     executionCompileOnly cLibs.bundles.compileonly
     executionAnnotationProcessor cLibs.bundles.annotationprocessor
-    executionImplementation('dev.lukebemish:forkedtaskexecutor:0.1.1') {
+    executionImplementation(libs.forkedtaskexecutor) {
         capabilities {
             requireFeature('runner')
         }
     }
 
-    implementation 'dev.lukebemish:forkedtaskexecutor:0.1.1'
-    implementation('dev.lukebemish:forkedtaskexecutor:0.1.1') {
+    implementation libs.forkedtaskexecutor
+    implementation(libs.forkedtaskexecutor) {
         capabilities {
             requireFeature('runner')
         }
     }
-    modelApi 'dev.lukebemish:forkedtaskexecutor:0.1.1'
+    modelApi libs.forkedtaskexecutor
 
-    instrumentationImplementation 'org.ow2.asm:asm:9.7'
+    instrumentationImplementation libs.asm
 }
 
 // This keeps the same versions at runtime and compile time

@@ -17,6 +17,7 @@ import java.net.URL;
 import java.net.URLClassLoader;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Paths;
+import java.time.Duration;
 import java.util.Arrays;
 import java.util.HashSet;
 import java.util.Set;
@@ -63,6 +64,35 @@ public class ToolTask implements Task {
     public PrintStream replaceSystemErr(PrintStream err) {
         this.err = err;
         return new PrintStream(OutputStream.nullOutputStream());
+    }
+
+    @Override
+    public void setupLifecycleWatcher(Supplier<Integer> currentTasks, Supplier<Boolean> attemptShutdown) {
+        var thread = new Thread("TaskGraphRunner Tool Daemon Watcher") {
+            @Override
+            public void run() {
+                int emptyFor = 0;
+                while (true) {
+                    try {
+                        Thread.sleep(Duration.ofSeconds(1));
+                    } catch (InterruptedException e) {
+                        break;
+                    }
+                    if (currentTasks.get() == 0) {
+                        emptyFor++;
+                    } else {
+                        emptyFor = 0;
+                    }
+                    if (emptyFor > 10) {
+                        if (attemptShutdown.get()) {
+                            break;
+                        }
+                    }
+                }
+            }
+        };
+        thread.setDaemon(true);
+        thread.start();
     }
 
     private record Target(URL[] urls, String mainClass) {}
