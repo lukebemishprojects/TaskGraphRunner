@@ -39,14 +39,8 @@ import java.util.zip.ZipEntry;
 
 public class ToolDaemonExecutor implements AutoCloseable {
     public static void execute(Path jar, Path logFile, String[] args, Context context, boolean classpathScoped) {
-        Path transformedJar;
-        try {
-            transformedJar = transform(jar, context);
-        } catch (IOException e) {
-            throw new UncheckedIOException(e);
-        }
         String mainClass;
-        try (var jarFile = new JarInputStream(Files.newInputStream(transformedJar))) {
+        try (var jarFile = new JarInputStream(Files.newInputStream(jar))) {
             var manifest = jarFile.getManifest();
             mainClass = manifest.getMainAttributes().getValue("Main-Class");
         } catch (IOException e) {
@@ -55,7 +49,7 @@ public class ToolDaemonExecutor implements AutoCloseable {
         if (mainClass == null) {
             throw new RuntimeException("No Main-Class attribute in manifest");
         }
-        execute(List.of(transformedJar), mainClass, logFile, args, context, classpathScoped);
+        execute(List.of(jar), mainClass, logFile, args, context, classpathScoped);
     }
 
     public static void execute(Collection<Path> classpath, String mainClass, Path logFile, String[] args, Context context, boolean classpathScoped) {
