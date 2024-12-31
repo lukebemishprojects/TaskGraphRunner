@@ -90,6 +90,7 @@ println "Version: ${project.version}"
 sourceSets {
     model {}
     execution {}
+    instrumentation {}
     signatures {}
 }
 
@@ -106,6 +107,11 @@ java {
     }
     registerFeature('execution') {
         usingSourceSet(sourceSets.execution)
+        withSourcesJar()
+        withJavadocJar()
+    }
+    registerFeature('instrumentation') {
+        usingSourceSet(sourceSets.instrumentation)
         withSourcesJar()
         withJavadocJar()
     }
@@ -130,11 +136,53 @@ tasks.register('executionShadowJar', ShadowJar) {
     configurations = [project.configurations.executionRuntimeClasspath]
 }
 
+tasks.named('executionJar', Jar) {
+    manifest {
+        attributes([
+            'Main-Class': 'dev.lukebemish.forkedtaskexecutor.runner.Main',
+            'Implementation-Version': project.version as String
+        ])
+    }
+}
+
+tasks.register('instrumentationShadowJar', ShadowJar) {
+    manifest {
+        attributes([
+            'Premain-Class': 'dev.lukebemish.taskgraphrunner.instrumentation.AgentMain',
+            'Can-Redefine-Classes': 'true',
+            'Can-Retransform-Classes': 'true',
+            'Implementation-Version': project.version as String
+        ])
+    }
+    archiveClassifier = 'instrumentation-all'
+    from sourceSets.instrumentation.output
+    configurations = [project.configurations.instrumentationRuntimeClasspath]
+    relocate 'org.objectweb.asm', 'dev.lukebemish.taskgraphrunner.instrumentation.shadow.asm'
+    minimize {
+        exclude 'module-info.class'
+    }
+}
+
+tasks.named('instrumentationJar', Jar) {
+    manifest {
+        attributes([
+            'Premain-Class': 'dev.lukebemish.taskgraphrunner.instrumentation.AgentMain',
+            'Can-Redefine-Classes': 'true',
+            'Can-Retransform-Classes': 'true',
+            'Implementation-Version': project.version as String
+        ])
+    }
+}
+
 tasks.register('shadowBugWorkaroundNestedJar', Jar) {
     archiveBaseName.set('shadow-bug-workaround-nested')
     dependsOn tasks.executionShadowJar
+    dependsOn tasks.instrumentationShadowJar
     from (tasks.executionShadowJar.archiveFile) {
         rename { 'execution-daemon.jar' }
+    }
+    from (tasks.instrumentationShadowJar.archiveFile) {
+        rename { 'instrumentation.jar' }
     }
 }
 
@@ -146,8 +194,12 @@ jar {
         ])
     }
     dependsOn tasks.executionShadowJar
+    dependsOn tasks.instrumentationShadowJar
     from (tasks.executionShadowJar.archiveFile) {
         rename { 'execution-daemon.jar' }
+    }
+    from (tasks.instrumentationShadowJar.archiveFile) {
+        rename { 'instrumentation.jar' }
     }
 }
 
@@ -225,6 +277,8 @@ dependencies {
         }
     }
     modelApi 'dev.lukebemish:forkedtaskexecutor:0.1.1'
+
+    instrumentationImplementation 'org.ow2.asm:asm:9.7'
 }
 
 // This keeps the same versions at runtime and compile time

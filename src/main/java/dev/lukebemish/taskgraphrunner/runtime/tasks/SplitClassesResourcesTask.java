@@ -28,9 +28,9 @@ public class SplitClassesResourcesTask extends Task {
         super(model);
         this.input = TaskInput.file("input", model.input, workItem, context, PathSensitivity.NONE);
         if (model.excludePattern != null) {
-            this.excludePattern = TaskInput.value("excludePattern", model.excludePattern, workItem, new Value.StringValue("META-INF/.*"));
+            this.excludePattern = TaskInput.value("excludePattern", model.excludePattern, workItem, new Value.DirectStringValue("META-INF/.*"));
         } else {
-            this.excludePattern = new TaskInput.ValueInput("excludePattern", new Value.StringValue("META-INF/.*"));
+            this.excludePattern = new TaskInput.ValueInput("excludePattern", new Value.DirectStringValue("META-INF/.*"));
         }
     }
 

@@ -54,7 +54,7 @@ public class RetrieveDataTask extends Task {
 
     @Override
     protected void run(Context context) {
-        var pathString = ((Value.StringValue) path.value()).value();
+        var pathString = ((Value.DirectStringValue) path.value()).value();
         if (isMakingZip) {
             try (var is = new BufferedInputStream(Files.newInputStream(input.path(context)));
                  var os = Files.newOutputStream(context.taskOutputPath(this, "output"));

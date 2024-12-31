@@ -16,7 +16,7 @@ final class InputAdapter extends GsonAdapter<Input> {
     public void write(JsonWriter out, Input value) throws IOException {
         switch (value) {
             case Input.DirectInput directInput -> {
-                if (directInput.value() instanceof Value.StringValue stringValue) {
+                if (directInput.value() instanceof Value.DirectStringValue stringValue) {
                     out.value("direct." + stringValue.value());
                 } else {
                     out.beginObject();
@@ -68,7 +68,7 @@ final class InputAdapter extends GsonAdapter<Input> {
             var prefix = string.substring(0, index);
             return switch (prefix) {
                 case "direct" ->
-                    new Input.DirectInput(new Value.StringValue(string.substring(string.indexOf('.') + 1)));
+                    new Input.DirectInput(new Value.DirectStringValue(string.substring(string.indexOf('.') + 1)));
                 case "parameter" -> new Input.ParameterInput(string.substring(string.indexOf('.') + 1));
                 case "task" -> {
                     var parts = string.substring(string.indexOf('.') + 1).split("\\.");

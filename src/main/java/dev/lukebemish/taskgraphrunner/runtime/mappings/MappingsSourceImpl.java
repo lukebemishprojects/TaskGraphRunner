@@ -105,7 +105,7 @@ public sealed interface MappingsSourceImpl {
         private final TaskInput.ValueInput label;
 
         public ChainedFiles(int andIncrement, TaskInput.FileListInput files) {
-            this.label = new TaskInput.ValueInput("chainedFilesLabel" + andIncrement, new Value.StringValue("chainedFiles" + andIncrement));
+            this.label = new TaskInput.ValueInput("chainedFilesLabel" + andIncrement, new Value.DirectStringValue("chainedFiles" + andIncrement));
             this.files = files;
         }
 
@@ -176,7 +176,7 @@ public sealed interface MappingsSourceImpl {
         private final List<MappingsSourceImpl> sources;
 
         public ChainedSource(int andIncrement, List<MappingsSourceImpl> sources) {
-            this.label = new TaskInput.ValueInput("chainedLabel" + andIncrement + "_" + sources.size(), new Value.StringValue("chained" + andIncrement));
+            this.label = new TaskInput.ValueInput("chainedLabel" + andIncrement + "_" + sources.size(), new Value.DirectStringValue("chained" + andIncrement));
             this.sources = sources;
         }
 
@@ -209,7 +209,7 @@ public sealed interface MappingsSourceImpl {
         private final TaskInput.FileListInput files;
 
         public MergedFiles(int andIncrement, TaskInput.FileListInput files) {
-            this.label = new TaskInput.ValueInput("mergedFilesLabel" + andIncrement, new Value.StringValue("mergedFiles" + andIncrement));
+            this.label = new TaskInput.ValueInput("mergedFilesLabel" + andIncrement, new Value.DirectStringValue("mergedFiles" + andIncrement));
             this.files = files;
         }
 
@@ -250,7 +250,7 @@ public sealed interface MappingsSourceImpl {
         private final List<MappingsSourceImpl> sources;
 
         public MergedSource(int andIncrement, List<MappingsSourceImpl> sources) {
-            this.label = new TaskInput.ValueInput("mergedLabel" + andIncrement + "_" + sources.size(), new Value.StringValue("merged" + andIncrement));
+            this.label = new TaskInput.ValueInput("mergedLabel" + andIncrement + "_" + sources.size(), new Value.DirectStringValue("merged" + andIncrement));
             this.sources = sources;
         }
 
@@ -283,7 +283,7 @@ public sealed interface MappingsSourceImpl {
         private final MappingsSourceImpl source;
 
         public ReverseSource(int andIncrement, MappingsSourceImpl source) {
-            this.label = new TaskInput.ValueInput("reverseLabel" + andIncrement, new Value.StringValue("reverse" + andIncrement));
+            this.label = new TaskInput.ValueInput("reverseLabel" + andIncrement, new Value.DirectStringValue("reverse" + andIncrement));
             this.source = source;
         }
 
@@ -316,7 +316,7 @@ public sealed interface MappingsSourceImpl {
         private final TaskInput.@Nullable ValueInput extension;
 
         public FileSource(int andIncrement, TaskInput.HasFileInput input, TaskInput.@Nullable ValueInput extension) {
-            this.label = new TaskInput.ValueInput("fileLabel" + andIncrement, new Value.StringValue("file" + andIncrement));
+            this.label = new TaskInput.ValueInput("fileLabel" + andIncrement, new Value.DirectStringValue("file" + andIncrement));
             this.input = input;
             this.extension = extension;
         }

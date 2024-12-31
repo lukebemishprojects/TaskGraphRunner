@@ -2,6 +2,7 @@ package dev.lukebemish.taskgraphrunner.runtime.execution;
 
 import dev.lukebemish.forkedtaskexecutor.ForkedTaskExecutor;
 import dev.lukebemish.forkedtaskexecutor.ForkedTaskExecutorSpec;
+import dev.lukebemish.taskgraphrunner.runtime.AgentInjector;
 import dev.lukebemish.taskgraphrunner.runtime.Context;
 import dev.lukebemish.taskgraphrunner.runtime.util.FileUtils;
 import dev.lukebemish.taskgraphrunner.runtime.util.HashUtils;
@@ -111,6 +112,7 @@ public class ToolDaemonExecutor implements AutoCloseable {
                 .info()
                 .command()
                 .orElseThrow())
+            .addJvmOption(AgentInjector.makeArg())
             .addJvmOption("-cp")
             .addJvmOption("@"+ classpathFile.toAbsolutePath())
             .taskClass("dev.lukebemish.taskgraphrunner.execution.ToolTask")

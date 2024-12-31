@@ -323,6 +323,10 @@ public sealed interface TaskInput extends RecordedInput {
         return value(name, modelInput, workItem, null);
     }
 
+    static ValueInput direct(String name, String value) {
+        return new ValueInput(name, new Value.DirectStringValue(value));
+    }
+
     static ValueInput value(String name, InputValue modelInput, WorkItem workItem, Value defaultValue) {
         return switch (modelInput) {
             case InputValue.ParameterInput parameterInput -> {

@@ -28,7 +28,7 @@ public abstract sealed class Argument {
     }
 
     public static Argument.ValueInput direct(String value) {
-        return new Argument.ValueInput(null, new InputValue.DirectInput(new Value.StringValue(value)));
+        return new Argument.ValueInput(null, new InputValue.DirectInput(new Value.DirectStringValue(value)));
     }
 
     public abstract Stream<InputHandle> inputs();
@@ -40,7 +40,8 @@ public abstract sealed class Argument {
             "fileOutput", new FileOutput.Specialized(),
             "classpath", new Classpath.Specialized(),
             "zip", new Zip.Specialized(),
-            "librariesFile", new LibrariesFile.Specialized()
+            "librariesFile", new LibrariesFile.Specialized(),
+            "untracked", new Untracked.Specialized()
         );
         private static final Map<Class<? extends Argument>, String> TASK_TYPE_NAMES = Map.of(
             ValueInput.class, "value",
@@ -48,13 +49,14 @@ public abstract sealed class Argument {
             FileOutput.class, "fileOutput",
             Classpath.class, "classpath",
             Zip.class, "zip",
-            LibrariesFile.class, "librariesFile"
+            LibrariesFile.class, "librariesFile",
+            Untracked.class, "untracked"
         );
 
         @SuppressWarnings({"rawtypes", "unchecked"})
         @Override
         public void write(JsonWriter out, Argument value) throws IOException {
-            if (value instanceof ValueInput valueInput && (!(valueInput.input instanceof InputValue.DirectInput directInput) || directInput.value() instanceof Value.StringValue)) {
+            if (value instanceof ValueInput valueInput && (!(valueInput.input instanceof InputValue.DirectInput directInput) || directInput.value() instanceof Value.DirectStringValue)) {
                 GSON.getAdapter(InputValue.class).write(out, valueInput.input);
                 return;
             }
@@ -82,6 +84,30 @@ public abstract sealed class Argument {
                 throw new IllegalArgumentException("Unknown argument type `" + type + "`");
             }
             return taskType.fromJsonTree(json);
+        }
+    }
+
+    @JsonAdapter(ArgumentAdapter.class)
+    public static final class Untracked extends Argument {
+        public InputValue value;
+
+        public Untracked(@Nullable String pattern, InputValue value) {
+            super(pattern);
+            this.value = value;
+        }
+
+        @Override
+        public Stream<InputHandle> inputs() {
+            return Stream.empty();
+        }
+
+        private static final class Specialized extends FieldAdapter<Untracked> {
+            @Override
+            public Function<Values, Untracked> build(Builder<Untracked> builder) {
+                var pattern = builder.field("pattern", arg -> arg.pattern, String.class);
+                var value = builder.field("value", arg -> arg.value, InputValue.class);
+                return values -> new Untracked(values.get(pattern), values.get(value));
+            }
         }
     }
 

@@ -190,7 +190,7 @@ public final class NeoFormGenerator {
             config.tasks.add(new TaskModel.RetrieveData(
                 "generated_retrieve_" + key,
                 new Input.ParameterInput("neoFormZip"),
-                new InputValue.DirectInput(new Value.StringValue(path))
+                new InputValue.DirectInput(new Value.DirectStringValue(path))
             ));
         }
 
@@ -224,7 +224,7 @@ public final class NeoFormGenerator {
                     } else {
                         var task = new TaskModel.DownloadJson(
                             step.name(),
-                            new InputValue.DirectInput(new Value.StringValue(source.version())),
+                            new InputValue.DirectInput(new Value.DirectStringValue(source.version())),
                             downloadManifestInput
                         );
                         downloadInputs.put(step.name(), new Input.TaskInput(new Output(step.name(), "output")));
@@ -237,7 +237,7 @@ public final class NeoFormGenerator {
                     } else {
                         var task = new TaskModel.DownloadDistribution(
                             step.name(),
-                            new InputValue.DirectInput(new Value.StringValue("client")),
+                            new InputValue.DirectInput(new Value.DirectStringValue("client")),
                             downloadJsonInput
                         );
                         downloadInputs.put(step.name(), new Input.TaskInput(new Output(step.name(), "output")));
@@ -250,7 +250,7 @@ public final class NeoFormGenerator {
                     } else {
                         var task = new TaskModel.DownloadDistribution(
                             step.name(),
-                            new InputValue.DirectInput(new Value.StringValue("server")),
+                            new InputValue.DirectInput(new Value.DirectStringValue("server")),
                             downloadJsonInput
                         );
                         downloadInputs.put(step.name(), new Input.TaskInput(new Output(step.name(), "output")));
@@ -263,7 +263,7 @@ public final class NeoFormGenerator {
                     } else {
                         var task = new TaskModel.DownloadMappings(
                             step.name(),
-                            new InputValue.DirectInput(new Value.StringValue("client")),
+                            new InputValue.DirectInput(new Value.DirectStringValue("client")),
                             downloadJsonInput
                         );
                         downloadInputs.put(step.name(), new Input.TaskInput(new Output(step.name(), "output")));
@@ -276,7 +276,7 @@ public final class NeoFormGenerator {
                     } else {
                         var task = new TaskModel.DownloadMappings(
                             step.name(),
-                            new InputValue.DirectInput(new Value.StringValue("server")),
+                            new InputValue.DirectInput(new Value.DirectStringValue("server")),
                             downloadJsonInput
                         );
                         downloadInputs.put(step.name(), new Input.TaskInput(new Output(step.name(), "output")));
@@ -330,13 +330,16 @@ public final class NeoFormGenerator {
                             toolModel.args.add(processArgument(downloadInputs, arg, step, source, listLibrariesName));
                         }
 
-                        toolModel.args.add(new Argument.ValueInput(null, new InputValue.DirectInput(new Value.StringValue("-jar"))));
+                        toolModel.args.add(new Argument.ValueInput(null, new InputValue.DirectInput(new Value.DirectStringValue("-jar"))));
                         toolModel.args.add(new Argument.FileInput(null, new Input.DirectInput(Value.artifact(function.version())), PathSensitivity.NONE));
                         args = toolModel.args;
                     } else {
                         TaskModel.DaemonExecutedTool toolModel;
                         tool = toolModel = new TaskModel.DaemonExecutedTool(step.name(), List.of(), new Input.DirectInput(Value.artifact(function.version())));
                         args = toolModel.args;
+                    }
+                    if (isVineflower(function) && function.args().stream().noneMatch(s -> s.startsWith("-thr="))) {
+                        args.add(processArgument(downloadInputs, "-thr="+Runtime.getRuntime().availableProcessors(), step, source, listLibrariesName));
                     }
                     for (var arg : function.args()) {
                         args.add(processArgument(downloadInputs, arg, step, source, listLibrariesName));
@@ -377,7 +380,7 @@ public final class NeoFormGenerator {
             var jst = new TaskModel.Jst(
                 "generated_jstTransform",
                 List.of(
-                    new Argument.ValueInput(null, new InputValue.DirectInput(new Value.StringValue("--enable-linemapper"))),
+                    new Argument.ValueInput(null, new InputValue.DirectInput(new Value.DirectStringValue("--enable-linemapper"))),
                     new Argument.FileOutput("--line-map-out={}", "linemap", "txt")
                 ),
                 new Input.TaskInput(sourcesTask),
@@ -413,13 +416,13 @@ public final class NeoFormGenerator {
             var recompile = new TaskModel.Compile(
                 "recompile",
                 List.of(
-                    new Argument.ValueInput(null, new InputValue.DirectInput(new Value.StringValue("--release"))),
-                    new Argument.ValueInput(null, new InputValue.DirectInput(new Value.StringValue(source.javaTarget() + ""))), // Target the release the neoform config targets
-                    new Argument.ValueInput(null, new InputValue.DirectInput(new Value.StringValue("-proc:none"))), // No APs in Minecraft's sources
-                    new Argument.ValueInput(null, new InputValue.DirectInput(new Value.StringValue("-nowarn"))), // We'll handle the diagnostics ourselves
-                    new Argument.ValueInput(null, new InputValue.DirectInput(new Value.StringValue("-g"))), // Gradle does it...
-                    new Argument.ValueInput(null, new InputValue.DirectInput(new Value.StringValue("-XDuseUnsharedTable=true"))), // Gradle does it?
-                    new Argument.ValueInput(null, new InputValue.DirectInput(new Value.StringValue("-implicit:none"))) // If we inject stubs, don't output those
+                    new Argument.ValueInput(null, new InputValue.DirectInput(new Value.DirectStringValue("--release"))),
+                    new Argument.ValueInput(null, new InputValue.DirectInput(new Value.DirectStringValue(source.javaTarget() + ""))), // Target the release the neoform config targets
+                    new Argument.ValueInput(null, new InputValue.DirectInput(new Value.DirectStringValue("-proc:none"))), // No APs in Minecraft's sources
+                    new Argument.ValueInput(null, new InputValue.DirectInput(new Value.DirectStringValue("-nowarn"))), // We'll handle the diagnostics ourselves
+                    new Argument.ValueInput(null, new InputValue.DirectInput(new Value.DirectStringValue("-g"))), // Gradle does it...
+                    new Argument.ValueInput(null, new InputValue.DirectInput(new Value.DirectStringValue("-XDuseUnsharedTable=true"))), // Gradle does it?
+                    new Argument.ValueInput(null, new InputValue.DirectInput(new Value.DirectStringValue("-implicit:none"))) // If we inject stubs, don't output those
                 ),
                 new Input.TaskInput(sourcesTask),
                 List.of(new Input.ListInput(
@@ -472,9 +475,9 @@ public final class NeoFormGenerator {
             var fixLineNumbers = new TaskModel.DaemonExecutedTool(
                 "generated_fixLineNumbers",
                 List.of(
-                    new Argument.ValueInput(null, new InputValue.DirectInput(new Value.StringValue("--input"))),
+                    new Argument.ValueInput(null, new InputValue.DirectInput(new Value.DirectStringValue("--input"))),
                     new Argument.FileInput(null, new Input.TaskInput(binariesTask), PathSensitivity.NONE),
-                    new Argument.ValueInput(null, new InputValue.DirectInput(new Value.StringValue("--output"))),
+                    new Argument.ValueInput(null, new InputValue.DirectInput(new Value.DirectStringValue("--output"))),
                     new Argument.FileOutput(null, "output", "jar")
                 ),
                 new Input.DirectInput(Value.tool("linemapper"))
@@ -522,9 +525,9 @@ public final class NeoFormGenerator {
                 case "libraries" -> new Argument.LibrariesFile(
                     null,
                     List.of(new Input.TaskInput(new Output(listLibrariesName, "output"))),
-                    new InputValue.DirectInput(new Value.StringValue("-e="))
+                    new InputValue.DirectInput(new Value.DirectStringValue("-e="))
                     );
-                case "version" -> new Argument.ValueInput(null, new InputValue.DirectInput(new Value.StringValue(fullConfig.version())));
+                case "version" -> new Argument.ValueInput(null, new InputValue.DirectInput(new Value.DirectStringValue(fullConfig.version())));
                 default -> {
                     var stepValue = step.values().get(name);
                     if (stepValue != null) {
@@ -544,8 +547,20 @@ public final class NeoFormGenerator {
             var function = fullConfig.functions().get(step.type());
             if (isVineflower(function)) {
                 arg = arg.replace("TRACE", "WARN");
+            } else if (arg.startsWith("-Xmx")) {
+                var rest = arg.substring(4);
+                var systemProp = "dev.lukebemish.taskgraphrunner."+step.type()+".maxHeap";
+                return new Argument.Untracked("-Xmx{}", new InputValue.DirectInput(new Value.SystemPropertyValue(systemProp, rest)));
+            } else if (arg.startsWith("-Xms")) {
+                var rest = arg.substring(4);
+                var systemProp = "dev.lukebemish.taskgraphrunner."+step.type()+".initialHeap";
+                return new Argument.Untracked("-Xms{}", new InputValue.DirectInput(new Value.SystemPropertyValue(systemProp, rest)));
+            } else if (isVineflower(function) && arg.startsWith("-thr=")) {
+                var rest = arg.substring(5);
+                var systemProp = "dev.lukebemish.taskgraphrunner."+step.type()+".maxThreads";
+                return new Argument.Untracked("-thr={}", new InputValue.DirectInput(new Value.SystemPropertyValue(systemProp, rest)));
             }
-            return new Argument.ValueInput(null, new InputValue.DirectInput(new Value.StringValue(arg)));
+            return new Argument.ValueInput(null, new InputValue.DirectInput(new Value.DirectStringValue(arg)));
         }
     }
 
@@ -566,6 +581,6 @@ public final class NeoFormGenerator {
             }
             throw new IllegalArgumentException("Unsure how to fill variable `" + name + "` in step `"+step.name() + "`");
         }
-        return new Input.DirectInput(new Value.StringValue(value));
+        return new Input.DirectInput(new Value.DirectStringValue(value));
     }
 }

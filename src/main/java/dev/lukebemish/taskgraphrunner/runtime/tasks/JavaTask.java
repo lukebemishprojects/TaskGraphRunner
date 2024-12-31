@@ -1,6 +1,7 @@
 package dev.lukebemish.taskgraphrunner.runtime.tasks;
 
 import dev.lukebemish.taskgraphrunner.model.TaskModel;
+import dev.lukebemish.taskgraphrunner.runtime.AgentInjector;
 import dev.lukebemish.taskgraphrunner.runtime.Context;
 import dev.lukebemish.taskgraphrunner.runtime.Task;
 import dev.lukebemish.taskgraphrunner.runtime.util.FileUtils;
@@ -26,6 +27,9 @@ public abstract class JavaTask extends Task {
             .orElseThrow();
 
         var command = new ArrayList<String>();
+
+        // Instrument the tool with the agent
+        command.add(AgentInjector.makeArg());
 
         var workingDirectory = context.taskWorkingDirectory(this);
         try {

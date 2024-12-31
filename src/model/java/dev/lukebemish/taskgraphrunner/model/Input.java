@@ -8,6 +8,7 @@ import java.util.Objects;
 
 @JsonAdapter(InputAdapter.class)
 public sealed interface Input {
+    @JsonAdapter(InputAdapter.class)
     sealed interface GeneralTaskInput extends Input {
         Output output(Map<String, Output> aliases);
     }

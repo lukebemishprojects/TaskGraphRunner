@@ -81,13 +81,13 @@ public class Vanilla implements Runnable {
                 }
             }
             if (!accessTransformers.isEmpty()) {
-                workItem.parameters.put("accessTransformers", new Value.ListValue(accessTransformers.stream().map(s -> (Value) new Value.StringValue(manifest.absolute(s))).toList()));
+                workItem.parameters.put("accessTransformers", new Value.ListValue(accessTransformers.stream().map(s -> (Value) new Value.DirectStringValue(manifest.absolute(s))).toList()));
             }
             if (!interfaceInjection.isEmpty()) {
-                workItem.parameters.put("interfaceInjection", new Value.ListValue(interfaceInjection.stream().map(s -> (Value) new Value.StringValue(manifest.absolute(s))).toList()));
+                workItem.parameters.put("interfaceInjection", new Value.ListValue(interfaceInjection.stream().map(s -> (Value) new Value.DirectStringValue(manifest.absolute(s))).toList()));
             }
             if (mappings != null) {
-                workItem.parameters.put("mappings", new Value.StringValue(manifest.absolute(mappings)));
+                workItem.parameters.put("mappings", new Value.DirectStringValue(manifest.absolute(mappings)));
             }
             config.workItems.add(workItem);
 

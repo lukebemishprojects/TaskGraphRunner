@@ -70,7 +70,7 @@ public class NeoForm implements Runnable {
             optionsBuilder.distribution(Distribution.valueOf(distribution.toUpperCase()));
             ArtifactManifest manifest = main.makeManifest();
             var zipPath = manifest.resolve(zip);
-            Config config = NeoFormGenerator.convert(zipPath, new Value.StringValue(manifest.absolute(zip)), optionsBuilder.build());
+            Config config = NeoFormGenerator.convert(zipPath, new Value.DirectStringValue(manifest.absolute(zip)), optionsBuilder.build());
             var workItem = new WorkItem();
             for (var result : results) {
                 var split = result.split(":");
@@ -87,13 +87,13 @@ public class NeoForm implements Runnable {
                 }
             }
             if (!accessTransformers.isEmpty()) {
-                workItem.parameters.put("accessTransformers", new Value.ListValue(accessTransformers.stream().map(s -> (Value) new Value.StringValue(manifest.absolute(s))).toList()));
+                workItem.parameters.put("accessTransformers", new Value.ListValue(accessTransformers.stream().map(s -> (Value) new Value.DirectStringValue(manifest.absolute(s))).toList()));
             }
             if (!interfaceInjection.isEmpty()) {
-                workItem.parameters.put("interfaceInjection", new Value.ListValue(interfaceInjection.stream().map(s -> (Value) new Value.StringValue(manifest.absolute(s))).toList()));
+                workItem.parameters.put("interfaceInjection", new Value.ListValue(interfaceInjection.stream().map(s -> (Value) new Value.DirectStringValue(manifest.absolute(s))).toList()));
             }
             if (parchmentData != null) {
-                workItem.parameters.put("parchmentData", new Value.StringValue(manifest.absolute(parchmentData)));
+                workItem.parameters.put("parchmentData", new Value.DirectStringValue(manifest.absolute(parchmentData)));
             }
             config.workItems.add(workItem);
 

@@ -8,7 +8,7 @@ public enum Distribution {
     JOINED;
 
     Input.DirectInput direct() {
-        return new Input.DirectInput(new Value.StringValue(this.name().toLowerCase(Locale.ROOT)));
+        return new Input.DirectInput(new Value.DirectStringValue(this.name().toLowerCase(Locale.ROOT)));
     }
 
     public static Distribution fromString(String value) {

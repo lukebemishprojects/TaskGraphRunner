@@ -15,7 +15,7 @@ final class InputValueAdapter extends GsonAdapter<InputValue> {
     public void write(JsonWriter out, InputValue value) throws IOException {
         switch (value) {
             case InputValue.DirectInput directInput -> {
-                if (directInput.value() instanceof Value.StringValue stringValue) {
+                if (directInput.value() instanceof Value.DirectStringValue stringValue) {
                     out.value("direct." + stringValue.value());
                 } else {
                     out.beginObject();
@@ -48,7 +48,7 @@ final class InputValueAdapter extends GsonAdapter<InputValue> {
             var prefix = string.substring(0, index);
             return switch (prefix) {
                 case "direct" ->
-                    new InputValue.DirectInput(new Value.StringValue(string.substring(string.indexOf('.') + 1)));
+                    new InputValue.DirectInput(new Value.DirectStringValue(string.substring(string.indexOf('.') + 1)));
                 case "parameter" -> new InputValue.ParameterInput(string.substring(string.indexOf('.') + 1));
                 default -> throw new IllegalArgumentException("Invalid input type: " + prefix);
             };

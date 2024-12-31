@@ -145,7 +145,7 @@ public final class SingleVersionGenerator {
             var downloadManifestName = "downloadManifest";
             var downloadJsonName = "downloadJson";
             config.tasks.add(new TaskModel.DownloadManifest(downloadManifestName));
-            config.tasks.add(new TaskModel.DownloadJson(downloadJsonName, new InputValue.DirectInput(new Value.StringValue(version)), new Input.TaskInput(new Output(downloadManifestName, "output"))));
+            config.tasks.add(new TaskModel.DownloadJson(downloadJsonName, new InputValue.DirectInput(new Value.DirectStringValue(version)), new Input.TaskInput(new Output(downloadManifestName, "output"))));
             versionJson = new Input.TaskInput(new Output(downloadJsonName, "output"));
         } else {
             versionJson = options.versionJson;
@@ -160,7 +160,7 @@ public final class SingleVersionGenerator {
             case CLIENT -> {
                 Input clientJar;
                 if (options.clientJar == null) {
-                    config.tasks.add(new TaskModel.DownloadDistribution("downloadClient", new InputValue.DirectInput(new Value.StringValue("client")), versionJson));
+                    config.tasks.add(new TaskModel.DownloadDistribution("downloadClient", new InputValue.DirectInput(new Value.DirectStringValue("client")), versionJson));
                     clientJar = new Input.TaskInput(new Output("downloadClient", "output"));
                 } else {
                     clientJar = options.clientJar;
@@ -176,7 +176,7 @@ public final class SingleVersionGenerator {
             case SERVER -> {
                 Input serverJar;
                 if (options.serverJar == null) {
-                    config.tasks.add(new TaskModel.DownloadDistribution("downloadServer", new InputValue.DirectInput(new Value.StringValue("server")), versionJson));
+                    config.tasks.add(new TaskModel.DownloadDistribution("downloadServer", new InputValue.DirectInput(new Value.DirectStringValue("server")), versionJson));
                     serverJar = new Input.TaskInput(new Output("downloadServer", "output"));
                 } else {
                     serverJar = options.serverJar;
@@ -184,7 +184,7 @@ public final class SingleVersionGenerator {
                 config.tasks.add(new TaskModel.RetrieveData(
                     "extractServer",
                     serverJar,
-                    new InputValue.DirectInput(new Value.StringValue("META-INF/versions/"+version+"/server-"+version+".jar"))
+                    new InputValue.DirectInput(new Value.DirectStringValue("META-INF/versions/"+version+"/server-"+version+".jar"))
                 ));
                 config.tasks.add(new TaskModel.SplitClassesResources(
                     "stripServer",
@@ -198,13 +198,13 @@ public final class SingleVersionGenerator {
                 Input clientJar;
                 Input serverJar;
                 if (options.clientJar == null) {
-                    config.tasks.add(new TaskModel.DownloadDistribution("downloadClient", new InputValue.DirectInput(new Value.StringValue("client")), versionJson));
+                    config.tasks.add(new TaskModel.DownloadDistribution("downloadClient", new InputValue.DirectInput(new Value.DirectStringValue("client")), versionJson));
                     clientJar = new Input.TaskInput(new Output("downloadClient", "output"));
                 } else {
                     clientJar = options.clientJar;
                 }
                 if (options.serverJar == null) {
-                    config.tasks.add(new TaskModel.DownloadDistribution("downloadServer", new InputValue.DirectInput(new Value.StringValue("server")), versionJson));
+                    config.tasks.add(new TaskModel.DownloadDistribution("downloadServer", new InputValue.DirectInput(new Value.DirectStringValue("server")), versionJson));
                     serverJar = new Input.TaskInput(new Output("downloadServer", "output"));
                 } else {
                     serverJar = options.serverJar;
@@ -212,7 +212,7 @@ public final class SingleVersionGenerator {
                 config.tasks.add(new TaskModel.RetrieveData(
                     "extractServer",
                     serverJar,
-                    new InputValue.DirectInput(new Value.StringValue("META-INF/versions/"+version+"/server-"+version+".jar"))
+                    new InputValue.DirectInput(new Value.DirectStringValue("META-INF/versions/"+version+"/server-"+version+".jar"))
                 ));
                 config.tasks.add(new TaskModel.SplitClassesResources(
                     "stripClient",
@@ -259,7 +259,7 @@ public final class SingleVersionGenerator {
         // rename the merged jar
         Input downloadClientMappings;
         if (options.clientMappings == null) {
-            config.tasks.add(new TaskModel.DownloadMappings("downloadClientMappings", new InputValue.DirectInput(new Value.StringValue("client")), versionJson));
+            config.tasks.add(new TaskModel.DownloadMappings("downloadClientMappings", new InputValue.DirectInput(new Value.DirectStringValue("client")), versionJson));
             downloadClientMappings = new Input.TaskInput(new Output("downloadClientMappings", "output"));
         } else {
             downloadClientMappings = options.clientMappings;
@@ -282,7 +282,7 @@ public final class SingleVersionGenerator {
                 Argument.direct("--map"),
                 new Argument.FileInput(null, mappingsTaskOutput, PathSensitivity.NONE),
                 Argument.direct("--cfg"),
-                new Argument.LibrariesFile(null, List.of(new Input.TaskInput(new Output(listLibrariesName, "output"))), new InputValue.DirectInput(new Value.StringValue("-e="))),
+                new Argument.LibrariesFile(null, List.of(new Input.TaskInput(new Output(listLibrariesName, "output"))), new InputValue.DirectInput(new Value.DirectStringValue("-e="))),
                 Argument.direct("--ann-fix"),
                 Argument.direct("--ids-fix"),
                 Argument.direct("--src-fix"),
@@ -341,9 +341,10 @@ public final class SingleVersionGenerator {
         var decompileTask = new TaskModel.Tool(
             "decompile",
             List.of(
-                Argument.direct("-Xmx4G"),
+                new Argument.Untracked("-Xmx{}", new InputValue.DirectInput(new Value.SystemPropertyValue("dev.lukebemish.taskgraphrunner.decompile.maxHeap", "4G"))),
                 Argument.direct("-jar"),
                 new Argument.FileInput(null, new Input.DirectInput(Value.tool("vineflower")), PathSensitivity.NONE),
+                new Argument.Untracked("-thr={}", new InputValue.DirectInput(new Value.SystemPropertyValue("dev.lukebemish.taskgraphrunner.decompile.maxThreads", String.valueOf(Runtime.getRuntime().availableProcessors())))),
                 Argument.direct("--decompile-inner"),
                 Argument.direct("--remove-bridge"),
                 Argument.direct("--decompile-generics"),
@@ -357,7 +358,7 @@ public final class SingleVersionGenerator {
                 Argument.direct("--indent-string=    "),
                 Argument.direct("--log-level=WARN"),
                 Argument.direct("-cfg"),
-                new Argument.LibrariesFile(null, decompileClasspath, new InputValue.DirectInput(new Value.StringValue("-e="))),
+                new Argument.LibrariesFile(null, decompileClasspath, new InputValue.DirectInput(new Value.DirectStringValue("-e="))),
                 new Argument.FileInput(null, new Input.TaskInput(originalBinaries), PathSensitivity.NONE),
                 new Argument.FileOutput(null, "output", "jar")
             )
@@ -372,7 +373,7 @@ public final class SingleVersionGenerator {
             var jst = new TaskModel.Jst(
                 "jstTransform",
                 List.of(
-                    new Argument.ValueInput(null, new InputValue.DirectInput(new Value.StringValue("--enable-linemapper"))),
+                    new Argument.ValueInput(null, new InputValue.DirectInput(new Value.DirectStringValue("--enable-linemapper"))),
                     new Argument.FileOutput("--line-map-out={}", "linemap", "txt")
                 ),
                 new Input.TaskInput(sourcesTask),
@@ -406,9 +407,9 @@ public final class SingleVersionGenerator {
         var fixLineNumbers = new TaskModel.DaemonExecutedTool(
             "fixLineNumbers",
             List.of(
-                new Argument.ValueInput(null, new InputValue.DirectInput(new Value.StringValue("--input"))),
+                new Argument.ValueInput(null, new InputValue.DirectInput(new Value.DirectStringValue("--input"))),
                 new Argument.FileInput(null, new Input.AliasInput("binarySourceIndependent"), PathSensitivity.NONE),
-                new Argument.ValueInput(null, new InputValue.DirectInput(new Value.StringValue("--output"))),
+                new Argument.ValueInput(null, new InputValue.DirectInput(new Value.DirectStringValue("--output"))),
                 new Argument.FileOutput(null, "output", "jar")
             ),
             new Input.DirectInput(Value.tool("linemapper"))

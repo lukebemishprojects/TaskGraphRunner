@@ -32,7 +32,7 @@ public class TransformMappingsTask extends Task {
     public TransformMappingsTask(TaskModel.TransformMappings model, WorkItem workItem, Context context) {
         super(model);
         this.format = model.format;
-        this.formatValue = new TaskInput.ValueInput("format", new Value.StringValue(format.name()));
+        this.formatValue = new TaskInput.ValueInput("format", new Value.DirectStringValue(format.name()));
         this.source = MappingsSourceImpl.of(model.source, workItem, context, new AtomicInteger());
         this.sourceJarInput = model.sourceJar == null ? null : TaskInput.file("sourceJar", model.sourceJar, workItem, context, PathSensitivity.NONE);
     }
