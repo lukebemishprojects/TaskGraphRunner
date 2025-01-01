@@ -4,7 +4,7 @@ forkedtaskexecutor = "0.1.4"
 picocli = "4.7.6"
 slf4j = "2.0.13"
 asm = "9.7"
-mappingio = "0.6.2"
+mappingio = "0.7.0"
 feather = "1.1.0"
 gson = "2.11.0"
 
@@ -18,7 +18,7 @@ slf4j-simple = { group = "org.slf4j", name = "slf4j-simple", version.ref = "slf4
 
 asm = { group = "org.ow2.asm", name = "asm", version.ref = "asm" }
 
-mappingio = { group = "dev.lukebemish.mirror.net.fabricmc", name = "mapping-io", version.ref = "mappingio" }
+mappingio = { group = "net.fabricmc", name = "mapping-io", version.ref = "mappingio" }
 
 feather-core = { group = "org.parchmentmc", name = "feather", version.ref = "feather" }
 feather-gson = { group = "org.parchmentmc.feather", name = "io-gson", version.ref = "feather" }
