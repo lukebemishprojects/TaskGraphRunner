@@ -1,6 +1,6 @@
 [versions]
 
-forkedtaskexecutor = "0.1.3"
+forkedtaskexecutor = "0.1.4"
 picocli = "4.7.6"
 slf4j = "2.0.13"
 asm = "9.7"

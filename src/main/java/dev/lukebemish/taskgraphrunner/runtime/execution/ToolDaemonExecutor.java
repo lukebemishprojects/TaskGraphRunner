@@ -164,8 +164,7 @@ public class ToolDaemonExecutor implements AutoCloseable {
 
     private static synchronized void clearInstance(ToolDaemonExecutor it, Path @Nullable [] classpath) {
         if (classpath == null && INSTANCE == it) {
-            var oldInstance = INSTANCE;
-            TO_CLOSE.add(new WeakReference<>(oldInstance));
+            TO_CLOSE.add(new WeakReference<>(it));
             INSTANCE = null;
         } else {
             var key = key(classpath);
