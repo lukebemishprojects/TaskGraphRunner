@@ -255,6 +255,7 @@ dependencies {
     }
     modelApi libs.gson
     modelImplementation libs.oshi.core
+    modelImplementation libs.slf4j.simple
     modelCompileOnlyApi cLibs.jspecify
     modelCompileOnly cLibs.bundles.compileonly
     modelAnnotationProcessor cLibs.bundles.annotationprocessor
