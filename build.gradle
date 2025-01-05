@@ -254,9 +254,11 @@ dependencies {
         }
     }
     modelApi libs.gson
+    modelImplementation libs.oshi.core
     modelCompileOnlyApi cLibs.jspecify
     modelCompileOnly cLibs.bundles.compileonly
     modelAnnotationProcessor cLibs.bundles.annotationprocessor
+    modelApi libs.forkedtaskexecutor
 
     signaturesApi libs.asm
     signaturesCompileOnly cLibs.bundles.compileonly
@@ -276,7 +278,6 @@ dependencies {
             requireFeature('runner')
         }
     }
-    modelApi libs.forkedtaskexecutor
 
     instrumentationImplementation libs.asm
 }

@@ -341,10 +341,10 @@ public final class SingleVersionGenerator {
         var decompileTask = new TaskModel.Tool(
             "decompile",
             List.of(
-                new Argument.Untracked("-Xmx{}", new InputValue.DirectInput(new Value.SystemPropertyValue("dev.lukebemish.taskgraphrunner.decompile.maxHeap", "4G"))),
+                new Argument.Untracked("-Xmx{}", new InputValue.DirectInput(new Value.SystemPropertyValue("dev.lukebemish.taskgraphrunner.decompile.maxHeap", String.valueOf(SystemSpecsFinder.recommendedMemory())))),
                 Argument.direct("-jar"),
                 new Argument.FileInput(null, new Input.DirectInput(Value.tool("vineflower")), PathSensitivity.NONE),
-                new Argument.Untracked("-thr={}", new InputValue.DirectInput(new Value.SystemPropertyValue("dev.lukebemish.taskgraphrunner.decompile.maxThreads", String.valueOf(Runtime.getRuntime().availableProcessors())))),
+                new Argument.Untracked("-thr={}", new InputValue.DirectInput(new Value.SystemPropertyValue("dev.lukebemish.taskgraphrunner.decompile.maxThreads", String.valueOf(SystemSpecsFinder.recommendedThreads())))),
                 Argument.direct("--decompile-inner"),
                 Argument.direct("--remove-bridge"),
                 Argument.direct("--decompile-generics"),

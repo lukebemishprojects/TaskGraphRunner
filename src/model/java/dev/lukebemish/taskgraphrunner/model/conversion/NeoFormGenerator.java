@@ -339,7 +339,7 @@ public final class NeoFormGenerator {
                         args = toolModel.args;
                     }
                     if (isVineflower(function) && function.args().stream().noneMatch(s -> s.startsWith("-thr="))) {
-                        args.add(processArgument(downloadInputs, "-thr="+Runtime.getRuntime().availableProcessors(), step, source, listLibrariesName));
+                        args.add(processArgument(downloadInputs, "-thr="+SystemSpecsFinder.recommendedThreads(), step, source, listLibrariesName));
                     }
                     for (var arg : function.args()) {
                         args.add(processArgument(downloadInputs, arg, step, source, listLibrariesName));
@@ -552,6 +552,9 @@ public final class NeoFormGenerator {
             if (arg.startsWith("-Xmx")) {
                 var rest = arg.substring(4);
                 var systemProp = "dev.lukebemish.taskgraphrunner."+step.type()+".maxHeap";
+                if (isVineflower(function)) {
+                    rest = String.valueOf(SystemSpecsFinder.recommendedMemory());
+                }
                 return new Argument.Untracked("-Xmx{}", new InputValue.DirectInput(new Value.SystemPropertyValue(systemProp, rest)));
             } else if (arg.startsWith("-Xms")) {
                 var rest = arg.substring(4);

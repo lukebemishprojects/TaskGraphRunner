@@ -7,6 +7,7 @@ asm = "9.7"
 mappingio = "0.7.0"
 feather = "1.1.0"
 gson = "2.11.0"
+oshi = "6.6.5"
 
 [libraries]
 
@@ -24,3 +25,5 @@ feather-core = { group = "org.parchmentmc", name = "feather", version.ref = "fea
 feather-gson = { group = "org.parchmentmc.feather", name = "io-gson", version.ref = "feather" }
 
 gson = { group = "com.google.code.gson", name = "gson", version.ref = "gson" }
+
+oshi-core = { group = "com.github.oshi", name = "oshi-core", version.ref = "oshi" }

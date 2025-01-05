@@ -37,6 +37,8 @@ public class LockManager {
 
     private static final Map<String, String> parallelismGroups;
 
+    private static final Semaphore heavyLock = new Semaphore(Integer.MAX_VALUE, true);
+
     static {
         String groupsProperty = System.getProperty("dev.lukebemish.taskgraphrunner.parallelism.groups", "");
         Map<String, String> map = new LinkedHashMap<>();
@@ -51,6 +53,29 @@ public class LockManager {
             }
         }
         parallelismGroups = map;
+    }
+
+    public static boolean isHeavy(String key) {
+        if (parallelismGroups.containsKey(key)) {
+            if (isHeavy(parallelismGroups.get(key))) {
+                return true;
+            }
+        }
+        return Boolean.getBoolean("dev.lukebemish.taskgraphrunner.parallelism."+key+".heavy");
+    }
+
+    public static LockLike heavyLightLock(String key) {
+        try {
+            if (isHeavy(key)) {
+                heavyLock.acquire(Integer.MAX_VALUE);
+                return new HeavyLock(heavyLock);
+            } else {
+                heavyLock.acquire();
+                return new LightLock(heavyLock);
+            }
+        } catch (InterruptedException e) {
+            throw new RuntimeException(e);
+        }
     }
 
     private static int findParallelism(String key) {
@@ -267,6 +292,30 @@ public class LockManager {
     public sealed interface LockLike extends AutoCloseable {
         @Override
         void close();
+    }
+
+    public static final class LightLock implements LockLike {
+        private final Semaphore semaphore;
+        private LightLock(Semaphore semaphore) {
+            this.semaphore = semaphore;
+        }
+
+        @Override
+        public void close() {
+            semaphore.release();
+        }
+    }
+
+    public static final class HeavyLock implements LockLike {
+        private final Semaphore semaphore;
+        private HeavyLock(Semaphore semaphore) {
+            this.semaphore = semaphore;
+        }
+
+        @Override
+        public void close() {
+            semaphore.release(Integer.MAX_VALUE);
+        }
     }
 
     public static final class Locks implements LockLike {

@@ -322,10 +322,12 @@ public abstract class Task implements RecordedInput {
             // Something was not up-to-date -- so we run everything
             LOGGER.info("Starting task `{}`.", name);
             try {
-                if (parallelism == null) {
-                    run(context);
-                } else {
-                    context.lockManager().enforcedParallelism(context, parallelism, () -> run(context));
+                try (var ignored = LockManager.heavyLightLock(parallelism)) {
+                    if (parallelism == null) {
+                        run(context);
+                    } else {
+                        context.lockManager().enforcedParallelism(context, parallelism, () -> run(context));
+                    }
                 }
                 boolean nothingChanged = true;
                 for (var output : outputTypes().keySet()) {

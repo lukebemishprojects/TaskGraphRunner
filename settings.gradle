@@ -26,6 +26,10 @@ dependencyResolutionManagement {
                 includeGroupAndSubgroups 'org.parchmentmc'
             }
         }
+        maven {
+            name 'Staging'
+            url 'https://maven.lukebemish.dev/staging/'
+        }
     }
 
     repositoriesMode = RepositoriesMode.FAIL_ON_PROJECT_REPOS
