@@ -14,7 +14,7 @@ buildscript {
     dependencyLocking {
         lockMode = LockMode.STRICT
         lockAllConfigurations()
-        lockFile.set file("settings-gradle-buildscript.lockfile")
+        lockFile.set file("locks/settings-buildscript-gradle.lockfile")
     }
 }
 
@@ -24,11 +24,12 @@ plugins {
     id 'dev.lukebemish.conventions' version '+'
 }
 
-gradle.lifecycle.beforeProject {
-    it.buildscript{
+gradle.lifecycle.beforeProject {p ->
+    p.buildscript{
         dependencyLocking {
             lockMode = LockMode.STRICT
             lockAllConfigurations()
+            lockFile.set file("locks/${(p.path + ":").replace(':', ' ').trim().replace(' ', '-')}buildscript-gradle.lockfile")
         }
     }
 }
