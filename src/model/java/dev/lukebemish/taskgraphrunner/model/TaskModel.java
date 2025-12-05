@@ -122,7 +122,7 @@ public sealed abstract class TaskModel {
         public Stream<InputHandle> inputs() {
             return Stream.concat(
                 source.inputs(),
-                Stream.of(InputHandle.of(() -> sourceJar, i -> this.sourceJar = i))
+                sourceJar == null ? Stream.empty() : Stream.of(InputHandle.of(() -> sourceJar, i -> this.sourceJar = i))
             );
         }
 
@@ -314,7 +314,10 @@ public sealed abstract class TaskModel {
 
         @Override
         public Stream<InputHandle> inputs() {
-            return Stream.concat(args.stream().flatMap(Argument::inputs), InputHandle.mutableList(classpath));
+            return Stream.concat(
+                args.stream().flatMap(Argument::inputs),
+                InputHandle.mutableList(classpath)
+            );
         }
 
         private static final class Specialized extends FieldAdapter<DaemonExecutedTool> {

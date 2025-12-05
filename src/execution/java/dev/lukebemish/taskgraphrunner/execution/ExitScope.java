@@ -10,7 +10,7 @@ public class ExitScope {
     public static void exit(int status) throws SystemExit {
         ExitScope exitScope = SCOPE.get();
         if (exitScope == null) {
-            throw new SystemExit(status, "No ExitScopedClassLoader found in the stack trace; this may not be properly caught.");
+            throw new SystemExit(status, "Not on a thread with an exit scope; this may not be properly caught.");
         }
         exitScope.exitStatus.set(status);
         throw new SystemExit(status);

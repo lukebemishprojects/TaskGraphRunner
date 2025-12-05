@@ -1,6 +1,7 @@
 package dev.lukebemish.taskgraphrunner.execution;
 
 import dev.lukebemish.forkedtaskexecutor.runner.Task;
+import org.jspecify.annotations.Nullable;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
@@ -104,11 +105,11 @@ public class ToolTask implements Task {
                 var target = targetSupplier.get();
                 var urls = target.urls();
                 var mainClass = target.mainClass();
-                var exitScopedClassLoader = new ExitScope();
+                var exitScope = new ExitScope();
                 try (var urlClassLoader = (urls.length != 0) ? new URLClassLoader(urls, ToolTask.class.getClassLoader()) : null) {
                     SystemStreams.OUT.set(printStream);
                     SystemStreams.ERR.set(printStream);
-                    ExitScope.SCOPE.set(exitScopedClassLoader);
+                    ExitScope.SCOPE.set(exitScope);
                     if (urls.length == 0) {
                         Thread.currentThread().setContextClassLoader(ToolTask.class.getClassLoader());
                     } else {
@@ -119,16 +120,12 @@ public class ToolTask implements Task {
                         var method = main.getMethod("main", String[].class);
                         method.invoke(null, (Object) args);
                     } catch (Throwable t) {
-                        Throwable cause = t;
                         Set<Throwable> seen = new HashSet<>();
-                        while (!(cause instanceof SystemExit) && cause.getCause() != null && !seen.contains(cause)) {
-                            cause = t.getCause();
-                            seen.add(cause);
-                        }
-                        if (cause instanceof SystemExit systemExit) {
+                        var systemExit = fromThrowable(t, seen);
+                        if (systemExit != null) {
                             return systemExit.status();
-                        } else if (exitScopedClassLoader.exitStatus() != 0) {
-                            return exitScopedClassLoader.exitStatus();
+                        } else if (exitScope.exitStatus() != 0) {
+                            return exitScope.exitStatus();
                         } else {
                             t.printStackTrace(printStream);
                             return 1;
@@ -146,6 +143,26 @@ public class ToolTask implements Task {
             return 1;
         }
         return 0;
+    }
+
+    @Nullable SystemExit fromThrowable(Throwable t, Set<Throwable> seen) {
+        if (seen.contains(t)) {
+            return null;
+        }
+        seen.add(t);
+        if (t instanceof SystemExit systemExit) {
+            return systemExit;
+        } else if (t.getCause() != null) {
+            if (fromThrowable(t.getCause(), seen) instanceof SystemExit systemExit) {
+                return systemExit;
+            }
+        }
+        for (var suppressed : t.getSuppressed()) {
+            if (fromThrowable(suppressed, seen) instanceof SystemExit systemExit) {
+                return systemExit;
+            }
+        }
+        return null;
     }
 
     private int launch(String classpath, String mainClass, String[] args, String logFile) {

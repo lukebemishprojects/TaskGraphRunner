@@ -7,13 +7,92 @@ pluginManagement {
     }
     plugins {
         id 'com.gradleup.shadow' version '8.3.0'
-        id 'dev.lukebemish.managedversioning' version '1.2.23'
+        id 'dev.lukebemish.central-portal-publishing' version '0.1.7'
     }
 }
 
 plugins {
-    id 'org.gradle.toolchains.foojay-resolver-convention' version '0.8.0'
-    id 'dev.lukebemish.conventions' version '0.1.10'
+    id 'org.gradle.toolchains.foojay-resolver-convention' version '1.0.0'
+    id 'dev.lukebemish.managedversioning' version '2.0.0-beta.7'
+    id 'dev.lukebemish.conventions' version '0.2.0-beta.2'
+}
+
+managedVersioning {
+    versionFile.set file('version.properties')
+    versionPRs()
+    versionSnapshots()
+
+    publishing {
+        mavenStaging()
+        mavenSnapshot()
+        mavenPullRequest()
+        mavenCentral()
+    }
+
+    gitHubActions {
+        snapshot {
+            prettyName.set 'Snapshot'
+            workflowDispatch.set(true)
+            onBranches.add 'main'
+            gradleJob {
+                buildCache()
+                cacheReadOnly.set false
+                javaVersion.set '21'
+                name.set 'build'
+                gradlew 'Build', 'build'
+                gradlew 'Publish', 'publish'
+                mavenSnapshot('github')
+            }
+        }
+        release {
+            prettyName.set 'Release'
+            workflowDispatch.set(true)
+            gradleJob {
+                buildCache()
+                javaVersion.set '21'
+                name.set 'build'
+                readOnly.set false
+                setupGitUser()
+                gradlew 'Tag Release', 'tagRelease'
+                gradlew 'Build', 'build'
+                push()
+                recordVersion 'Record Version', 'version'
+                dependencySubmission()
+            }
+            gradleJob {
+                buildCache()
+                javaVersion.set '21'
+                name.set 'publish'
+                needs.add('build')
+                tag.set('${{needs.build.outputs.version}}')
+                gradlew 'Publish', 'publish', 'closeAndReleaseSonatypeStagingRepository'
+                sign()
+                mavenCentral()
+                mavenStaging('github')
+            }
+        }
+        build_pr {
+            prettyName.set 'Build PR'
+            pullRequest.set(true)
+            gradleJob {
+                javaVersion.set '21'
+                name.set 'build'
+                gradlew 'Build', 'build'
+                gradlew 'Publish', 'publish'
+                pullRequestArtifact()
+            }
+        }
+        publish_pr {
+            concurrency.unsetConvention()
+            concurrency.unset()
+            prettyName.set 'Publish PR'
+            publishPullRequestAction(
+                'github',
+                "dev/lukebemish/taskgraphrunner",
+                'Build PR'
+            )
+        }
+    }
 }
 
 dependencyResolutionManagement {

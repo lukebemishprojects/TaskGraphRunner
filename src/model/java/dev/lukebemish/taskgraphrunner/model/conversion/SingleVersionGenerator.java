@@ -31,6 +31,7 @@ public final class SingleVersionGenerator {
         private final @Nullable Input serverJar;
         private final @Nullable Input clientMappings;
         private final List<AdditionalJst> additionalJst = new ArrayList<>();
+        private final boolean remap;
 
         public enum SidedAnnotation implements Serializable {
             CPW("CPW"),
@@ -49,7 +50,7 @@ public final class SingleVersionGenerator {
             }
         }
 
-        private Options(@Nullable String accessTransformersParameter, @Nullable String injectedInterfacesParameter, Distribution distribution, @Nullable SidedAnnotation sidedAnnotation, @Nullable String mappingsParameter, @Nullable Input versionJson, @Nullable Input clientJar, @Nullable Input serverJar, @Nullable Input clientMappings) {
+        private Options(@Nullable String accessTransformersParameter, @Nullable String injectedInterfacesParameter, Distribution distribution, @Nullable SidedAnnotation sidedAnnotation, @Nullable String mappingsParameter, @Nullable Input versionJson, @Nullable Input clientJar, @Nullable Input serverJar, @Nullable Input clientMappings, boolean remap) {
             this.accessTransformersParameter = accessTransformersParameter;
             this.injectedInterfacesParameter = injectedInterfacesParameter;
             this.distribution = distribution;
@@ -59,6 +60,7 @@ public final class SingleVersionGenerator {
             this.clientJar = clientJar;
             this.serverJar = serverJar;
             this.clientMappings = clientMappings;
+            this.remap = remap;
         }
 
         public static Builder builder() {
@@ -76,6 +78,7 @@ public final class SingleVersionGenerator {
             private @Nullable Input serverJar = null;
             private @Nullable Input clientMappings = null;
             private final List<AdditionalJst> additionalJst = new ArrayList<>();
+            private boolean remap = true;
 
             private Builder() {}
 
@@ -106,6 +109,9 @@ public final class SingleVersionGenerator {
 
             public Builder clientMappings(Input clientMappings) {
                 this.clientMappings = clientMappings;
+                if (!this.remap) {
+                    throw new IllegalStateException("Cannot set client mappings when remapping is disabled");
+                }
                 return this;
             }
 
@@ -129,8 +135,21 @@ public final class SingleVersionGenerator {
                 return this;
             }
 
+            public Builder noRemap() {
+                this.remap = false;
+                if (this.clientMappings != null) {
+                    throw new IllegalStateException("Cannot set client mappings when remapping is disabled");
+                }
+                return this;
+            }
+
+            public Builder remap() {
+                this.remap = true;
+                return this;
+            }
+
             public Options build() {
-                var options = new Options(accessTransformersParameter, injectedInterfacesParameter, distribution, sidedAnnotation, mappingsParameter, versionJson, clientJar, serverJar, clientMappings);
+                var options = new Options(accessTransformersParameter, injectedInterfacesParameter, distribution, sidedAnnotation, mappingsParameter, versionJson, clientJar, serverJar, clientMappings, remap);
                 options.additionalJst.addAll(additionalJst);
                 return options;
             }
@@ -257,46 +276,51 @@ public final class SingleVersionGenerator {
         List<Output> additionalClasspath = new ArrayList<>();
 
         // rename the merged jar
-        Input downloadClientMappings;
-        if (options.clientMappings == null) {
-            config.tasks.add(new TaskModel.DownloadMappings("downloadClientMappings", new InputValue.DirectInput(new Value.DirectStringValue("client")), versionJson));
-            downloadClientMappings = new Input.TaskInput(new Output("downloadClientMappings", "output"));
-        } else {
-            downloadClientMappings = options.clientMappings;
-        }
-        boolean reverseMappings = true;
-        Input mappingsTaskOutput;
-        if (options.mappingsParameter != null) {
-            reverseMappings = false;
-            mappingsTaskOutput = new Input.ParameterInput(options.mappingsParameter);
-        } else {
-            mappingsTaskOutput = downloadClientMappings;
-        }
-        var renameTask = new TaskModel.DaemonExecutedTool(
-            "rename",
-            List.of(
-                Argument.direct("--input"),
-                new Argument.FileInput(null, new Input.TaskInput(merged), PathSensitivity.NONE),
-                Argument.direct("--output"),
-                new Argument.FileOutput(null, "output", "jar"),
-                Argument.direct("--map"),
-                new Argument.FileInput(null, mappingsTaskOutput, PathSensitivity.NONE),
-                Argument.direct("--cfg"),
-                new Argument.LibrariesFile(null, List.of(new Input.TaskInput(new Output(listLibrariesName, "output"))), new InputValue.DirectInput(new Value.DirectStringValue("-e="))),
-                Argument.direct("--ann-fix"),
-                Argument.direct("--ids-fix"),
-                Argument.direct("--src-fix"),
-                Argument.direct("--record-fix"),
-                Argument.direct("--unfinal-params")
-            ),
-            new Input.DirectInput(Value.tool("autorenamingtool"))
-        );
-        config.tasks.add(renameTask);
-        if (reverseMappings) {
-            renameTask.args.add(Argument.direct("--reverse"));
-        }
+        Output originalBinaries;
 
-        Output originalBinaries = new Output("rename", "output");
+        if (options.remap) {
+            Input downloadClientMappings;
+            if (options.clientMappings == null) {
+                config.tasks.add(new TaskModel.DownloadMappings("downloadClientMappings", new InputValue.DirectInput(new Value.DirectStringValue("client")), versionJson));
+                downloadClientMappings = new Input.TaskInput(new Output("downloadClientMappings", "output"));
+            } else {
+                downloadClientMappings = options.clientMappings;
+            }
+            boolean reverseMappings = true;
+            Input mappingsTaskOutput;
+            if (options.mappingsParameter != null) {
+                reverseMappings = false;
+                mappingsTaskOutput = new Input.ParameterInput(options.mappingsParameter);
+            } else {
+                mappingsTaskOutput = downloadClientMappings;
+            }
+            var renameTask = new TaskModel.DaemonExecutedTool(
+                "rename",
+                List.of(
+                    Argument.direct("--input"),
+                    new Argument.FileInput(null, new Input.TaskInput(merged), PathSensitivity.NONE),
+                    Argument.direct("--output"),
+                    new Argument.FileOutput(null, "output", "jar"),
+                    Argument.direct("--map"),
+                    new Argument.FileInput(null, mappingsTaskOutput, PathSensitivity.NONE),
+                    Argument.direct("--cfg"),
+                    new Argument.LibrariesFile(null, List.of(new Input.TaskInput(new Output(listLibrariesName, "output"))), new InputValue.DirectInput(new Value.DirectStringValue("-e="))),
+                    Argument.direct("--ann-fix"),
+                    Argument.direct("--ids-fix"),
+                    Argument.direct("--src-fix"),
+                    Argument.direct("--record-fix"),
+                    Argument.direct("--unfinal-params")
+                ),
+                new Input.DirectInput(Value.tool("autorenamingtool"))
+            );
+            config.tasks.add(renameTask);
+            if (reverseMappings) {
+                renameTask.args.add(Argument.direct("--reverse"));
+            }
+            originalBinaries = new Output("rename", "output");
+        } else {
+            originalBinaries = merged;
+        }
 
         Output binariesTask = originalBinaries;
 
