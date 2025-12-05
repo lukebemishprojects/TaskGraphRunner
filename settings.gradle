@@ -29,7 +29,8 @@ gradle.lifecycle.beforeProject {p ->
         dependencyLocking {
             lockMode = LockMode.STRICT
             lockAllConfigurations()
-            lockFile.set file("locks/${(p.path + ":").replace(':', ' ').trim().replace(' ', '-')}buildscript-gradle.lockfile")
+            var cleanProjectName = (p.path + ":").replace(':', ' ').trim().replace(' ', '-')
+            lockFile.set file("locks/${cleanProjectName}buildscript-gradle.lockfile")
         }
     }
 }
