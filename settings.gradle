@@ -83,7 +83,7 @@ managedVersioning {
                 name.set 'publish'
                 needs.add('build')
                 tag.set('${{needs.build.outputs.version}}')
-                gradlew 'Publish', 'publish', 'closeAndReleaseSonatypeStagingRepository'
+                gradlew 'Publish', 'publish'
                 sign()
                 mavenCentral()
                 mavenStaging('github')
