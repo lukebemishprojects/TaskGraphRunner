@@ -5,6 +5,7 @@ import dev.lukebemish.taskgraphrunner.runtime.RecordedInput;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.OutputStream;
+import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -93,6 +94,17 @@ public final class HashUtils {
             throw new RuntimeException(e);
         }
         digest.update(bytes, offset, len);
+        return HexFormat.of().formatHex(digest.digest());
+    }
+
+    public static String hash(ByteBuffer bytes, String algorithm) {
+        MessageDigest digest;
+        try {
+            digest = MessageDigest.getInstance(algorithm);
+        } catch (NoSuchAlgorithmException e) {
+            throw new RuntimeException(e);
+        }
+        digest.update(bytes);
         return HexFormat.of().formatHex(digest.digest());
     }
 

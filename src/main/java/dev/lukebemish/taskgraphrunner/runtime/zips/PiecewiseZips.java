@@ -1,6 +1,6 @@
 package dev.lukebemish.taskgraphrunner.runtime.zips;
 
-import com.google.protobuf.ByteString;
+import com.google.protobuf.UnsafeByteOperations;
 import dev.lukebemish.taskgraphrunner.runtime.Invocation;
 import dev.lukebemish.taskgraphrunner.runtime.util.HashUtils;
 
@@ -12,7 +12,6 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
-import java.util.function.Consumer;
 
 public class PiecewiseZips {
     private final Invocation invocation;
@@ -78,7 +77,7 @@ public class PiecewiseZips {
                     if (localHeaderStart + 30 + compressedSize > fileSize) {
                         continue outer;
                     }
-                    // TODO: We could make this configureable?
+                    // TODO: We could make this configurable?
                     if (compressedSize < 1) {
                         // skip small/empty files
                         continue;
@@ -97,23 +96,24 @@ public class PiecewiseZips {
             throw new IOException("Could not find valid EOCD record in zip file: " + inputZip);
         }
 
+        var start = System.nanoTime();
         int head = 0;
         for (var file : files) {
             if (file.offset > head) {
                 builder.addEntries(ZipEntry.newBuilder().setSimplePart(SimpleZipPart.newBuilder()
-                    .setRawData(ByteString.copyFrom(zipFileBytes, head, file.offset - head))
+                    .setRawData(UnsafeByteOperations.unsafeWrap(zipFileBytes, head, file.offset - head))
                     .build()));
                 head = file.offset;
             }
             if (file.offset == head) {
-                byte[] fileBytes = new byte[file.length];
-                System.arraycopy(zipFileBytes, file.offset, fileBytes, 0, fileBytes.length);
-                var hash = HashUtils.hash(fileBytes, "SHA-256");
+                var hash = HashUtils.hash(zipFileBytes, file.offset, file.length, "SHA-256");
                 var fileOutPath = invocation.pathFromHash(hash, "dat");
                 if (!Files.exists(fileOutPath.getParent())) {
                     Files.createDirectories(fileOutPath.getParent());
                 }
-                Files.write(fileOutPath, fileBytes);
+                try (var fileOutChannel = FileChannel.open(fileOutPath, StandardOpenOption.WRITE, StandardOpenOption.CREATE)) {
+                    copyBytes(fileOutChannel, ByteBuffer.wrap(zipFileBytes, file.offset, file.length));
+                }
                 builder.addEntries(ZipEntry.newBuilder().setReferencePart(ReferenceZipPart.newBuilder()
                     .setExpectedLength(file.length)
                     .setContentHash(hash)
@@ -125,9 +125,10 @@ public class PiecewiseZips {
         }
         if (head < fileSize) {
             builder.addEntries(ZipEntry.newBuilder().setSimplePart(SimpleZipPart.newBuilder()
-                .setRawData(ByteString.copyFrom(zipFileBytes, head, fileSize - head))
+                .setRawData(UnsafeByteOperations.unsafeWrap(zipFileBytes, head, fileSize - head))
                 .build()));
         }
+        System.out.println((System.nanoTime() - start) / 1000f);
 
         builder.setFormat(1);
 
@@ -190,14 +191,18 @@ public class PiecewiseZips {
     }
 
     private static void copyChannel(FileChannel outChannel, SeekableByteChannel inChannel) throws IOException {
-        long fullSize = inChannel.size();
+        copyChannel(outChannel, inChannel, 0, inChannel.size());
+    }
+
+    private static void copyChannel(FileChannel outChannel, SeekableByteChannel inChannel, int offset, long length) throws IOException {
+        inChannel.position(offset);
         long total = 0;
         long transferred;
-        while (total < fullSize && (transferred = outChannel.transferFrom(inChannel, outChannel.position(), fullSize - total)) > 0) {
+        while (total < length && (transferred = outChannel.transferFrom(inChannel, outChannel.position(), length - total)) > 0) {
             total += transferred;
             outChannel.position(outChannel.position() + transferred);
         }
-        if (total < fullSize) {
+        if (total < length) {
             throw new IOException("Could not fully copy from channel");
         }
     }
