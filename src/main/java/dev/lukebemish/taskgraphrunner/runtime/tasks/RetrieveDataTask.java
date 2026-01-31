@@ -56,7 +56,7 @@ public class RetrieveDataTask extends Task {
     protected void run(Context context) {
         var pathString = ((Value.DirectStringValue) path.value()).value();
         if (isMakingZip) {
-            try (var is = new BufferedInputStream(Files.newInputStream(input.path(context)));
+            try (var is = new BufferedInputStream(Files.newInputStream(input.resolvePath(context)));
                  var os = Files.newOutputStream(context.taskOutputPath(this, "output"));
                  var zis = new ZipInputStream(is);
                  var zos = new ZipOutputStream(os)
@@ -92,7 +92,7 @@ public class RetrieveDataTask extends Task {
                 throw new UncheckedIOException(e);
             }
         } else {
-            try (var is = new BufferedInputStream(Files.newInputStream(input.path(context)));
+            try (var is = new BufferedInputStream(Files.newInputStream(input.resolvePath(context)));
                  var os = Files.newOutputStream(context.taskOutputPath(this, "output"));
                  var zis = new ZipInputStream(is)) {
                 boolean found = false;

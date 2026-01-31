@@ -81,6 +81,21 @@ public final class HashUtils {
         return HexFormat.of().formatHex(output.toByteArray());
     }
 
+    public static String hash(byte[] bytes, String algorithm) {
+        return hash(bytes, 0, bytes.length, algorithm);
+    }
+
+    public static String hash(byte[] bytes, int offset, int len, String algorithm) {
+        MessageDigest digest;
+        try {
+            digest = MessageDigest.getInstance(algorithm);
+        } catch (NoSuchAlgorithmException e) {
+            throw new RuntimeException(e);
+        }
+        digest.update(bytes, offset, len);
+        return HexFormat.of().formatHex(digest.digest());
+    }
+
     public static String hash(String key, String algorithm) {
         MessageDigest digest;
         try {

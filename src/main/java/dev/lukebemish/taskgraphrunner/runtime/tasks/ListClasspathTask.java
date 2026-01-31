@@ -45,7 +45,7 @@ public class ListClasspathTask extends Task {
 
     @Override
     protected void run(Context context) {
-        var versionManifest = versionJson.path(context);
+        var versionManifest = versionJson.resolvePath(context);
         var output = context.taskOutputPath(this, "output");
 
         try (var reader = Files.newBufferedReader(versionManifest)) {

@@ -34,7 +34,7 @@ public sealed interface TaskInput extends RecordedInput {
     }
 
     sealed interface HasFileInput extends TaskInput {
-        Path path(Context context);
+        Path resolvePath(Context context);
     }
 
     sealed interface FileListInput extends TaskInput {
@@ -135,7 +135,7 @@ public sealed interface TaskInput extends RecordedInput {
         }
 
         @Override
-        public Path path(Context context) {
+        public Path resolvePath(Context context) {
             return path();
         }
     }
@@ -147,7 +147,7 @@ public sealed interface TaskInput extends RecordedInput {
 
         @Override
         public void hashContents(ByteConsumer digest, Context context) {
-            HashUtils.hash(output.getPath(context), digest);
+            HashUtils.hash(output.resolvePath(context), digest);
         }
 
         @Override
@@ -164,8 +164,8 @@ public sealed interface TaskInput extends RecordedInput {
         }
 
         @Override
-        public Path path(Context context) {
-            return output.getPath(context);
+        public Path resolvePath(Context context) {
+            return output.resolvePath(context);
         }
     }
 
@@ -177,7 +177,7 @@ public sealed interface TaskInput extends RecordedInput {
 
         @Override
         public List<Path> paths(Context context) {
-            try (var reader = Files.newBufferedReader(libraryFile.path(context))) {
+            try (var reader = Files.newBufferedReader(libraryFile.resolvePath(context))) {
                 return reader.lines().map(line -> pathNotation(context, line)).toList();
             } catch (IOException e) {
                 throw new UncheckedIOException(e);
@@ -300,7 +300,7 @@ public sealed interface TaskInput extends RecordedInput {
 
         @Override
         public List<Path> paths(Context context) {
-            var stream = inputs.stream().map(input -> input.path(context));
+            var stream = inputs.stream().map(input -> input.resolvePath(context));
             if (listOrdering == ListOrdering.CONTENTS) {
                 stream = stream.sorted((a, b) -> {
                     var aOutput = new ByteArrayOutputStream();

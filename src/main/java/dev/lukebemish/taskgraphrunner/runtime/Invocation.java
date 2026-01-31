@@ -3,8 +3,10 @@ package dev.lukebemish.taskgraphrunner.runtime;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import dev.lukebemish.taskgraphrunner.model.Output;
+import dev.lukebemish.taskgraphrunner.runtime.util.HashUtils;
 import dev.lukebemish.taskgraphrunner.runtime.util.JsonUtils;
 import dev.lukebemish.taskgraphrunner.runtime.util.LockManager;
+import dev.lukebemish.taskgraphrunner.runtime.zips.PiecewiseZips;
 import org.jspecify.annotations.Nullable;
 
 import java.io.IOException;
@@ -12,6 +14,7 @@ import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
@@ -20,7 +23,9 @@ import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.Callable;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
@@ -82,6 +87,11 @@ public class Invocation implements Context, AutoCloseable {
         return taskDirectory(task).resolve(contentsHash+"."+outputName+"."+task.outputId()+"."+outputType+".txt");
     }
 
+    private static final Set<String> CAN_REASSEMBLE = Set.of(
+        "zip",
+        "jar"
+    );
+
     @Override
     public Path existingTaskOutput(Task task, String outputName) {
         var outputType = task.outputTypes().get(outputName);
@@ -95,11 +105,80 @@ public class Invocation implements Context, AutoCloseable {
         }
         try {
             var contents = Files.readString(markerPath, StandardCharsets.UTF_8);
+            if (contents.contains("/")) {
+                var parts = contents.split("/");
+                if (CAN_REASSEMBLE.contains(parts[1])) {
+                    var prefix = parts[0].substring(0, 2);
+                    // TODO: check existence of component parts, perhaps?
+                    return contentAddressableDirectory().resolve(prefix).resolve(parts[0] + "." + outputType  + ".binpb");
+                } else {
+                    // Requires reassembly we cannot perform
+                    return null;
+                }
+            }
             var prefix = contents.substring(0, 2);
             return contentAddressableDirectory().resolve(prefix).resolve(contents + "." + outputType);
         } catch (IOException e) {
             throw new UncheckedIOException(e);
         }
+    }
+
+    private final Map<String, Path> reassemblyCache = new ConcurrentHashMap<>();
+    private final Path reassemblyCachePath = Files.createTempDirectory("taskgraphrunner-reassembly-");
+
+    public String storeTaskOutput(Task task, String output) throws IOException {
+        var outputPath = taskOutputPath(task, output);
+        var outputType = task.outputTypes().get(output);
+        var hash = HashUtils.hash(outputPath, "SHA-256");
+        return switch (outputType) {
+            case "zip", "jar" -> {
+                var outPath = pathFromHash(hash, outputType + ".binpb");
+                Files.createDirectories(outPath.getParent());
+                new PiecewiseZips(this).disassemble(outputPath, outPath);
+                reassemblyCache.compute(task.name() + "/" + output + "." + outputType, (k, v) -> {
+                    var outputPathCache = reassemblyCachePath.resolve(k);
+                    try {
+                        Files.createDirectories(outputPathCache.getParent());
+                        Files.move(outputPath, outputPathCache, StandardCopyOption.ATOMIC_MOVE);
+                        return outputPathCache;
+                    } catch (IOException e) {
+                        throw new UncheckedIOException(e);
+                    }
+                });
+                yield hash + "/" + outputType;
+            }
+            default -> {
+                var outPath = pathFromHash(hash, task.outputTypes().get(output));
+                Files.createDirectories(outPath.getParent());
+                // This is atomic because locking here is less sensible
+                Files.move(outputPath, outPath, StandardCopyOption.ATOMIC_MOVE);
+                yield hash;
+            }
+        };
+    }
+
+    public Path reassembleTaskOutput(Task task, String outputName, Path reassemblyInfo) {
+        var outputType = task.outputTypes().get(outputName);
+        if (outputType == null) {
+            throw new IllegalArgumentException("No such output `"+outputName+"` for task `"+task.name()+"`");
+        }
+        return reassemblyCache.computeIfAbsent(task.name() + "/" + outputName + "." + outputType, k -> {
+            var outputPath = reassemblyCachePath.resolve(k);
+            try {
+                Files.createDirectories(outputPath.getParent());
+                switch (outputType) {
+                    case "zip", "jar" -> {
+                        new PiecewiseZips(this).assemble(outputPath, reassemblyInfo);
+                    }
+                    default -> {
+                        throw new IllegalArgumentException("Cannot reassemble output of type `" + outputType + "` for task `" + task.name() + "`");
+                    }
+                }
+            } catch (IOException e) {
+                throw new UncheckedIOException(e);
+            }
+            return outputPath;
+        });
     }
 
     @Override
@@ -212,6 +291,7 @@ public class Invocation implements Context, AutoCloseable {
                     JsonArray outputs = new JsonArray();
                     singleTask.addProperty("state", taskStatePath(task).toAbsolutePath().toString());
                     for (var output : task.outputTypes().entrySet()) {
+                        // TODO: we ought to record reassembly info here too!
                         outputs.add(existingTaskOutput(task, output.getKey()).toAbsolutePath().toString());
                     }
                     singleTask.add("outputs", outputs);

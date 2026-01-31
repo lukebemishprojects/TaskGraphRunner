@@ -1,0 +1,26 @@
+syntax = "proto3";
+
+option java_multiple_files = true;
+option java_package = "dev.lukebemish.taskgraphrunner.runtime.zips";
+option java_outer_classname = "ZipPartsProtos";
+
+message SimpleZipPart {
+    bytes rawData = 1;
+}
+
+message ReferenceZipPart {
+    string contentHash = 1;
+    int32 expectedLength = 2;
+}
+
+message ZipEntry {
+    oneof entry {
+        SimpleZipPart simplePart = 1;
+        ReferenceZipPart referencePart = 2;
+    }
+}
+
+message ZipFile {
+    int32 format = 1;
+    repeated ZipEntry entries = 2;
+}

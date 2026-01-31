@@ -59,7 +59,7 @@ public class DownloadAssetsTask extends Task {
 
     @Override
     protected void run(Context context) {
-        var versionJson = this.versionJson.path(context);
+        var versionJson = this.versionJson.resolvePath(context);
         try (var reader = Files.newBufferedReader(versionJson)) {
             var json = JsonUtils.GSON.fromJson(reader, JsonObject.class);
             var assetIndex = json.getAsJsonObject("assetIndex");

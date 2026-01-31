@@ -165,7 +165,7 @@ public abstract class Task implements RecordedInput {
                 try (var ignored = node.task.lock(context)) {
                     node.task.execute(context);
                     for (var entry : node.outputs.entrySet()) {
-                        var outputPath = Objects.requireNonNull(context.existingTaskOutput(node.task, entry.getKey()), "Output did not exist");
+                        var outputPath = Objects.requireNonNull(new TaskOutput(node.task.name, entry.getKey()).resolvePath(context), "Output did not exist");
                         try {
                             Files.copy(outputPath, entry.getValue(), StandardCopyOption.REPLACE_EXISTING);
                         } catch (IOException e) {
@@ -347,14 +347,9 @@ public abstract class Task implements RecordedInput {
                     outputId--;
                 } else {
                     for (var output : outputTypes().keySet()) {
-                        var outputPath = context.taskOutputPath(this, output);
-                        var hash = HashUtils.hash(outputPath, "SHA-256");
-                        var outPath = context.pathFromHash(hash, outputTypes().get(output));
                         var markerPath = context.taskOutputMarkerPath(this, output);
-                        Files.createDirectories(outPath.getParent());
                         Files.createDirectories(markerPath.getParent());
-                        // This is atomic because locking here is less sensible
-                        Files.move(outputPath, outPath, StandardCopyOption.ATOMIC_MOVE);
+                        var hash = context.storeTaskOutput(this, output);
                         Files.writeString(markerPath, hash, StandardCharsets.UTF_8);
                     }
                 }

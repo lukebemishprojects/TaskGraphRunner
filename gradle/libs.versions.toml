@@ -8,6 +8,7 @@ mappingio = "0.7.0"
 feather = "1.1.0"
 gson = "2.11.0"
 oshi = "6.6.5"
+protobuf = "4.33.4"
 
 [libraries]
 
@@ -27,3 +28,6 @@ feather-gson = { group = "org.parchmentmc.feather", name = "io-gson", version.re
 gson = { group = "com.google.code.gson", name = "gson", version.ref = "gson" }
 
 oshi-core = { group = "com.github.oshi", name = "oshi-core", version.ref = "oshi" }
+
+protobuf-java = { group = "com.google.protobuf", name = "protobuf-java", version.ref = "protobuf" }
+protobuf-protoc = { group = "com.google.protobuf", name = "protoc", version.ref = "protobuf" }

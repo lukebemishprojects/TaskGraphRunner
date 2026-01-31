@@ -51,7 +51,7 @@ public class SplitClassesResourcesTask extends Task {
 
         var deny = Pattern.compile((String) excludePattern.value().value()).asMatchPredicate();
 
-        try (var input = new JarInputStream(new BufferedInputStream(Files.newInputStream(this.input.path(context))));
+        try (var input = new JarInputStream(new BufferedInputStream(Files.newInputStream(this.input.resolvePath(context))));
              var classesOutFile = new BufferedOutputStream(Files.newOutputStream(classesJar));
              var resourcesOutFile = new BufferedOutputStream(Files.newOutputStream(resourcesJar));
              var classesOutJar = new JarOutputStream(classesOutFile);

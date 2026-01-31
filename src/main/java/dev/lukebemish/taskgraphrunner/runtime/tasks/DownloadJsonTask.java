@@ -39,7 +39,7 @@ public class DownloadJsonTask extends Task {
 
     @Override
     protected void run(Context context) {
-        try (var reader = Files.newBufferedReader(manifest.path(context))) {
+        try (var reader = Files.newBufferedReader(manifest.resolvePath(context))) {
             var json = JsonUtils.GSON.fromJson(reader, JsonObject.class);
             var versions = json.getAsJsonArray("versions");
             var matching = versions.asList().stream()

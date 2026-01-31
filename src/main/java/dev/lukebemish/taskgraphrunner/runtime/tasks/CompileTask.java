@@ -79,7 +79,7 @@ public class CompileTask extends Task {
 
     @Override
     protected void run(Context context) {
-        var sourcesJar = this.sources.path(context);
+        var sourcesJar = this.sources.resolvePath(context);
 
         var workingDirectory = context.taskWorkingDirectory(this);
         var logFile = workingDirectory.resolve("log.txt");
