@@ -20,11 +20,9 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
-import java.util.concurrent.ThreadFactory;
 
 public class PiecewiseZips {
-    private static final ThreadFactory FACTORY = Thread.ofVirtual().name("TaskGraphRunner-Zip-", 1).factory();
-    private static final ExecutorService PARALLEL_EXECUTOR = Executors.newThreadPerTaskExecutor(FACTORY);
+    private static final ExecutorService PARALLEL_EXECUTOR = Executors.newThreadPerTaskExecutor(Thread.ofVirtual().name("TaskGraphRunner-Zip-", 1).factory());
 
     private final Invocation invocation;
 
@@ -182,60 +180,103 @@ public class PiecewiseZips {
         if (zipFile.getFormat() != 1) {
             throw new IOException("Unsupported zip part holder format: " + zipFile.getFormat());
         }
+        int totalTargetSize = 0;
+        for (int i = 0; i < zipFile.getEntriesCount(); i++) {
+            var entry = zipFile.getEntries(i);
+            switch (entry.getEntryCase()) {
+                case SIMPLEPART -> {
+                    var part = entry.getSimplePart();
+                    totalTargetSize += part.getRawData().size();
+                }
+                case REFERENCEPART -> {
+                    var part = entry.getReferencePart();
+                    totalTargetSize += part.getExpectedLength();
+                }
+                default -> throw new IOException("Unsupported zip entry case: " + entry.getEntryCase());
+            }
+        }
         try (var outChannel = FileChannel.open(outputZip, StandardOpenOption.WRITE, StandardOpenOption.CREATE)) {
+            outChannel.truncate(totalTargetSize);
+            int offset = 0;
+            var futures = new Future<?>[zipFile.getEntriesCount()];
             for (int i = 0; i < zipFile.getEntriesCount(); i++) {
                 var entry = zipFile.getEntries(i);
 
+                var thisOffset = offset;
                 switch (entry.getEntryCase()) {
                     case SIMPLEPART -> {
                         var part = entry.getSimplePart();
-                        copyBytes(outChannel, part.getRawData().asReadOnlyByteBuffer());
+                        copyBytes(outChannel, thisOffset, part.getRawData().asReadOnlyByteBuffer());
+                        offset += part.getRawData().size();
                     }
                     case REFERENCEPART -> {
                         var part = entry.getReferencePart();
-                        var contentPath = invocation.pathFromHash(part.getContentHash(), "dat");
-                        if (!Files.exists(contentPath)) {
-                            throw new IOException("Missing zip entry content for hash " + part.getContentHash() + " at " + contentPath);
-                        }
+                        futures[i] = PARALLEL_EXECUTOR.submit(() -> {
+                            try {
+                                var contentPath = invocation.pathFromHash(part.getContentHash(), "dat");
+                                if (!Files.exists(contentPath)) {
+                                    throw new IOException("Missing zip entry content for hash " + part.getContentHash() + " at " + contentPath);
+                                }
 
-                        try (var contentChannel = FileChannel.open(contentPath, StandardOpenOption.READ)) {
-                            var totalSize = contentChannel.size();
-                            copyChannel(outChannel, contentChannel);
-                            if (totalSize != part.getExpectedLength()) {
-                                throw new IOException("Mismatched content length for zip entry with hash " + part.getContentHash() + ": expected " + part.getExpectedLength() + ", got " + totalSize);
+                                try (var contentChannel = FileChannel.open(contentPath, StandardOpenOption.READ)) {
+                                    var totalSize = contentChannel.size();
+                                    if (totalSize != part.getExpectedLength()) {
+                                        throw new IOException("Mismatched content length for zip entry with hash " + part.getContentHash() + ": expected " + part.getExpectedLength() + ", got " + totalSize);
+                                    }
+                                    copyChannel(outChannel, thisOffset, contentChannel, 0, totalSize);
+                                }
+                            } catch (IOException e) {
+                                throw new UncheckedIOException(e);
                             }
-                        }
+                        });
+
+                        offset += part.getExpectedLength();
                     }
                     default -> throw new IOException("Unsupported zip entry case: " + entry.getEntryCase());
+                }
+            }
+            for (var future : futures) {
+                if (future != null) {
+                    try {
+                        future.get();
+                    } catch (InterruptedException | ExecutionException e) {
+                        throw new RuntimeException(e);
+                    }
                 }
             }
         }
     }
 
     private static void copyBytes(FileChannel outChannel, ByteBuffer bytes) throws IOException {
+        copyBytes(outChannel, outChannel.position(), bytes);
+    }
+
+    private static void copyBytes(FileChannel outChannel, long outPosition, ByteBuffer bytes) throws IOException {
         int fullSize = bytes.remaining();
         int total = 0;
         int transferred;
-        while (total < fullSize && (transferred = outChannel.write(bytes)) != 0) {
+        while (total < fullSize && (transferred = outChannel.write(bytes, outPosition)) != 0) {
             total += transferred;
         }
+        outChannel.position(outPosition + total);
         if (total < fullSize) {
             throw new IOException("Could not fully copy from byte buffer");
         }
     }
 
     private static void copyChannel(FileChannel outChannel, SeekableByteChannel inChannel) throws IOException {
-        copyChannel(outChannel, inChannel, 0, inChannel.size());
+        copyChannel(outChannel, outChannel.position(), inChannel, 0, inChannel.size());
     }
 
-    private static void copyChannel(FileChannel outChannel, SeekableByteChannel inChannel, int offset, long length) throws IOException {
+    private static void copyChannel(FileChannel outChannel, long outPosition, SeekableByteChannel inChannel, int offset, long length) throws IOException {
         inChannel.position(offset);
         long total = 0;
         long transferred;
-        while (total < length && (transferred = outChannel.transferFrom(inChannel, outChannel.position(), length - total)) > 0) {
+        while (total < length && (transferred = outChannel.transferFrom(inChannel, outPosition, length - total)) > 0) {
             total += transferred;
-            outChannel.position(outChannel.position() + transferred);
+            outPosition += transferred;
         }
+        outChannel.position(outPosition);
         if (total < length) {
             throw new IOException("Could not fully copy from channel");
         }
