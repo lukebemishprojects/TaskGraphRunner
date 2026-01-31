@@ -3,8 +3,10 @@ package dev.lukebemish.taskgraphrunner.runtime.zips;
 import com.google.protobuf.UnsafeByteOperations;
 import dev.lukebemish.taskgraphrunner.runtime.Invocation;
 import dev.lukebemish.taskgraphrunner.runtime.util.HashUtils;
+import org.jspecify.annotations.Nullable;
 
 import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
 import java.nio.channels.SeekableByteChannel;
@@ -12,12 +14,29 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
+import java.util.List;
+import java.util.Objects;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.ThreadFactory;
 
 public class PiecewiseZips {
+    private static final ThreadFactory FACTORY = Thread.ofVirtual().name("TaskGraphRunner-Zip-", 1).factory();
+    private static final ExecutorService PARALLEL_EXECUTOR = Executors.newThreadPerTaskExecutor(FACTORY);
+
     private final Invocation invocation;
 
     public PiecewiseZips(Invocation invocation) {
         this.invocation = invocation;
+    }
+
+    private record FileCompressed(int offset, int length) implements Comparable<FileCompressed> {
+        @Override
+        public int compareTo(FileCompressed o) {
+            return Integer.compare(this.offset, o.offset);
+        }
     }
 
     public void disassemble(Path inputZip, Path outputZipPartsFile) throws IOException {
@@ -25,14 +44,6 @@ public class PiecewiseZips {
         byte[] zipFileBytes = Files.readAllBytes(inputZip);
         var fileSize = zipFileBytes.length;
 
-        // TODO: do we risk streaming it and assume we get "nice" jars? And then validate at the end?
-
-        record FileCompressed(int offset, int length) implements Comparable<FileCompressed> {
-            @Override
-            public int compareTo(FileCompressed o) {
-                return Integer.compare(this.offset, o.offset);
-            }
-        }
         var files = new ArrayList<FileCompressed>();
 
         var maxEocdLength = 1 << 16; // 64KB
@@ -96,39 +107,46 @@ public class PiecewiseZips {
             throw new IOException("Could not find valid EOCD record in zip file: " + inputZip);
         }
 
-        var start = System.nanoTime();
         int head = 0;
+        record OrRef(@Nullable ZipEntry entry, @Nullable Future<ZipEntry> future) {}
+        List<OrRef> partsList = new ArrayList<>();
         for (var file : files) {
             if (file.offset > head) {
-                builder.addEntries(ZipEntry.newBuilder().setSimplePart(SimpleZipPart.newBuilder()
+                partsList.add(new OrRef(ZipEntry.newBuilder().setSimplePart(SimpleZipPart.newBuilder()
                     .setRawData(UnsafeByteOperations.unsafeWrap(zipFileBytes, head, file.offset - head))
-                    .build()));
+                ).build(), null));
                 head = file.offset;
             }
             if (file.offset == head) {
-                var hash = HashUtils.hash(zipFileBytes, file.offset, file.length, "SHA-256");
-                var fileOutPath = invocation.pathFromHash(hash, "dat");
-                if (!Files.exists(fileOutPath.getParent())) {
-                    Files.createDirectories(fileOutPath.getParent());
-                }
-                try (var fileOutChannel = FileChannel.open(fileOutPath, StandardOpenOption.WRITE, StandardOpenOption.CREATE)) {
-                    copyBytes(fileOutChannel, ByteBuffer.wrap(zipFileBytes, file.offset, file.length));
-                }
-                builder.addEntries(ZipEntry.newBuilder().setReferencePart(ReferenceZipPart.newBuilder()
-                    .setExpectedLength(file.length)
-                    .setContentHash(hash)
-                    .build()));
+                partsList.add(new OrRef(null, PARALLEL_EXECUTOR.submit(() -> {
+                    try {
+                        return referenceEntry(file, zipFileBytes);
+                    } catch (IOException e) {
+                        throw new UncheckedIOException(e);
+                    }
+                })));
+
                 head += file.length;
             } else {
                 throw new IOException("Overlapping local files in zip disassembly");
             }
         }
         if (head < fileSize) {
-            builder.addEntries(ZipEntry.newBuilder().setSimplePart(SimpleZipPart.newBuilder()
+            partsList.add(new OrRef(ZipEntry.newBuilder().setSimplePart(SimpleZipPart.newBuilder()
                 .setRawData(UnsafeByteOperations.unsafeWrap(zipFileBytes, head, fileSize - head))
-                .build()));
+            ).build(), null));
         }
-        System.out.println((System.nanoTime() - start) / 1000f);
+        for (var orRef : partsList) {
+            if (orRef.entry() instanceof ZipEntry entry) {
+                builder.addEntries(entry);
+            } else {
+                try {
+                    builder.addEntries(Objects.requireNonNull(orRef.future()).get());
+                } catch (InterruptedException | ExecutionException e) {
+                    throw new RuntimeException(e);
+                }
+            }
+        }
 
         builder.setFormat(1);
 
@@ -137,6 +155,22 @@ public class PiecewiseZips {
             var zipFile = builder.build();
             zipFile.writeTo(os);
         }
+    }
+
+    private ZipEntry referenceEntry(FileCompressed file, byte[] zipFileBytes) throws IOException {
+        var hash = HashUtils.hash(zipFileBytes, file.offset, file.length, "SHA-256");
+        var fileOutPath = invocation.pathFromHash(hash, "dat");
+        if (!Files.exists(fileOutPath.getParent())) {
+            Files.createDirectories(fileOutPath.getParent());
+        }
+        try (var fileOutChannel = FileChannel.open(fileOutPath, StandardOpenOption.WRITE, StandardOpenOption.CREATE)) {
+            copyBytes(fileOutChannel, ByteBuffer.wrap(zipFileBytes, file.offset, file.length));
+        }
+
+        return ZipEntry.newBuilder().setReferencePart(ReferenceZipPart.newBuilder()
+            .setExpectedLength(file.length)
+            .setContentHash(hash)
+        ).build();
     }
 
     public void assemble(Path outputZip, Path zipPartsFile) throws IOException {
