@@ -4,13 +4,15 @@ import com.google.protobuf.ByteString;
 import dev.lukebemish.taskgraphrunner.runtime.Invocation;
 import dev.lukebemish.taskgraphrunner.runtime.util.HashUtils;
 
-import java.io.BufferedInputStream;
-import java.io.BufferedOutputStream;
 import java.io.IOException;
-import java.nio.channels.Channels;
+import java.nio.ByteBuffer;
+import java.nio.channels.FileChannel;
+import java.nio.channels.SeekableByteChannel;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
+import java.util.function.Consumer;
 
 public class PiecewiseZips {
     private final Invocation invocation;
@@ -76,8 +78,8 @@ public class PiecewiseZips {
                     if (localHeaderStart + 30 + compressedSize > fileSize) {
                         continue outer;
                     }
-                    // TODO: should this cutoff be configurable?
-                    if (compressedSize < 1000) {
+                    // TODO: We could make this configureable?
+                    if (compressedSize < 1) {
                         // skip small/empty files
                         continue;
                     }
@@ -130,13 +132,13 @@ public class PiecewiseZips {
         builder.setFormat(1);
 
         try (var os = Files.newOutputStream(outputZipPartsFile)) {
+            // TODO: do we set this to be last used before the parts were written?
             var zipFile = builder.build();
             zipFile.writeTo(os);
         }
     }
 
     public void assemble(Path outputZip, Path zipPartsFile) throws IOException {
-        // TODO: try without NIO, see if it's faster? Profile?
         ZipFile zipFile;
         try (var is = Files.newInputStream(zipPartsFile)) {
             // should be .binpb file
@@ -145,15 +147,14 @@ public class PiecewiseZips {
         if (zipFile.getFormat() != 1) {
             throw new IOException("Unsupported zip part holder format: " + zipFile.getFormat());
         }
-        try (var os = new BufferedOutputStream(Files.newOutputStream(outputZip));
-             var channel = Channels.newChannel(os)) {
+        try (var outChannel = FileChannel.open(outputZip, StandardOpenOption.WRITE, StandardOpenOption.CREATE)) {
             for (int i = 0; i < zipFile.getEntriesCount(); i++) {
                 var entry = zipFile.getEntries(i);
 
                 switch (entry.getEntryCase()) {
                     case SIMPLEPART -> {
                         var part = entry.getSimplePart();
-                        channel.write(part.getRawData().asReadOnlyByteBuffer());
+                        copyBytes(outChannel, part.getRawData().asReadOnlyByteBuffer());
                     }
                     case REFERENCEPART -> {
                         var part = entry.getReferencePart();
@@ -162,16 +163,42 @@ public class PiecewiseZips {
                             throw new IOException("Missing zip entry content for hash " + part.getContentHash() + " at " + contentPath);
                         }
 
-                        try (var is = new BufferedInputStream(Files.newInputStream(contentPath))) {
-                            long written = is.transferTo(os);
-                            if (written != part.getExpectedLength()) {
-                                throw new IOException("Mismatched zip entry content size for hash " + part.getContentHash() + ": expected " + part.getExpectedLength() + ", got " + written);
+                        try (var contentChannel = FileChannel.open(contentPath, StandardOpenOption.READ)) {
+                            var totalSize = contentChannel.size();
+                            copyChannel(outChannel, contentChannel);
+                            if (totalSize != part.getExpectedLength()) {
+                                throw new IOException("Mismatched content length for zip entry with hash " + part.getContentHash() + ": expected " + part.getExpectedLength() + ", got " + totalSize);
                             }
                         }
                     }
                     default -> throw new IOException("Unsupported zip entry case: " + entry.getEntryCase());
                 }
             }
+        }
+    }
+
+    private static void copyBytes(FileChannel outChannel, ByteBuffer bytes) throws IOException {
+        int fullSize = bytes.remaining();
+        int total = 0;
+        int transferred;
+        while (total < fullSize && (transferred = outChannel.write(bytes)) != 0) {
+            total += transferred;
+        }
+        if (total < fullSize) {
+            throw new IOException("Could not fully copy from byte buffer");
+        }
+    }
+
+    private static void copyChannel(FileChannel outChannel, SeekableByteChannel inChannel) throws IOException {
+        long fullSize = inChannel.size();
+        long total = 0;
+        long transferred;
+        while (total < fullSize && (transferred = outChannel.transferFrom(inChannel, outChannel.position(), fullSize - total)) > 0) {
+            total += transferred;
+            outChannel.position(outChannel.position() + transferred);
+        }
+        if (total < fullSize) {
+            throw new IOException("Could not fully copy from channel");
         }
     }
 }

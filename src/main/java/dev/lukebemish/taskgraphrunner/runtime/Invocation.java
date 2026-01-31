@@ -109,7 +109,6 @@ public class Invocation implements Context, AutoCloseable {
                 var parts = contents.split("/");
                 if (CAN_REASSEMBLE.contains(parts[1])) {
                     var prefix = parts[0].substring(0, 2);
-                    // TODO: check existence of component parts, perhaps?
                     return contentAddressableDirectory().resolve(prefix).resolve(parts[0] + "." + outputType  + ".binpb");
                 } else {
                     // Requires reassembly we cannot perform
@@ -291,8 +290,16 @@ public class Invocation implements Context, AutoCloseable {
                     JsonArray outputs = new JsonArray();
                     singleTask.addProperty("state", taskStatePath(task).toAbsolutePath().toString());
                     for (var output : task.outputTypes().entrySet()) {
-                        // TODO: we ought to record reassembly info here too!
-                        outputs.add(existingTaskOutput(task, output.getKey()).toAbsolutePath().toString());
+                        var existingPath = existingTaskOutput(task, output.getKey());
+                        var lastDot = existingPath.getFileName().toString().lastIndexOf('.');
+                        if (lastDot != -1 && !"binpb".equals(output.getValue()) && "binpb".equals(existingPath.getFileName().toString().substring(lastDot + 1))) {
+                            var reassemblyInfo = new JsonObject();
+                            reassemblyInfo.addProperty("reassembles", existingPath.toAbsolutePath().toString());
+                            reassemblyInfo.addProperty("type", output.getValue());
+                            outputs.add(reassemblyInfo);
+                        } else {
+                            outputs.add(existingPath.toAbsolutePath().toString());
+                        }
                     }
                     singleTask.add("outputs", outputs);
                     executed.add(task.name(), singleTask);
