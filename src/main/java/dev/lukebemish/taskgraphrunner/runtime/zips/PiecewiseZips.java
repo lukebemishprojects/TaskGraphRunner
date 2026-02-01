@@ -13,6 +13,8 @@ import java.nio.channels.SeekableByteChannel;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
+import java.nio.file.attribute.FileTime;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
@@ -108,6 +110,7 @@ public class PiecewiseZips {
         int head = 0;
         record OrRef(@Nullable ZipEntry entry, @Nullable Future<ZipEntry> future) {}
         List<OrRef> partsList = new ArrayList<>();
+        var time = FileTime.from(Instant.now());
         for (var file : files) {
             if (file.offset > head) {
                 partsList.add(new OrRef(ZipEntry.newBuilder().setSimplePart(SimpleZipPart.newBuilder()
@@ -118,7 +121,7 @@ public class PiecewiseZips {
             if (file.offset == head) {
                 partsList.add(new OrRef(null, PARALLEL_EXECUTOR.submit(() -> {
                     try {
-                        return referenceEntry(file, zipFileBytes);
+                        return referenceEntry(file, zipFileBytes, time);
                     } catch (IOException e) {
                         throw new UncheckedIOException(e);
                     }
@@ -149,20 +152,24 @@ public class PiecewiseZips {
         builder.setFormat(1);
 
         try (var os = Files.newOutputStream(outputZipPartsFile)) {
-            // TODO: do we set this to be last used before the parts were written?
             var zipFile = builder.build();
             zipFile.writeTo(os);
         }
+        Files.setLastModifiedTime(outputZipPartsFile, time);
     }
 
-    private ZipEntry referenceEntry(FileCompressed file, byte[] zipFileBytes) throws IOException {
+    private ZipEntry referenceEntry(FileCompressed file, byte[] zipFileBytes, FileTime time) throws IOException {
         var hash = HashUtils.hash(zipFileBytes, file.offset, file.length, "SHA-256");
         var fileOutPath = invocation.pathFromHash(hash, "dat");
         if (!Files.exists(fileOutPath.getParent())) {
             Files.createDirectories(fileOutPath.getParent());
         }
-        try (var fileOutChannel = FileChannel.open(fileOutPath, StandardOpenOption.WRITE, StandardOpenOption.CREATE)) {
-            copyBytes(fileOutChannel, ByteBuffer.wrap(zipFileBytes, file.offset, file.length));
+        if (Files.exists(fileOutPath) && Files.size(fileOutPath) == file.length) {
+            Files.setLastModifiedTime(fileOutPath, time);
+        } else {
+            try (var fileOutChannel = FileChannel.open(fileOutPath, StandardOpenOption.WRITE, StandardOpenOption.CREATE)) {
+                copyBytes(fileOutChannel, ByteBuffer.wrap(zipFileBytes, file.offset, file.length));
+            }
         }
 
         return ZipEntry.newBuilder().setReferencePart(ReferenceZipPart.newBuilder()

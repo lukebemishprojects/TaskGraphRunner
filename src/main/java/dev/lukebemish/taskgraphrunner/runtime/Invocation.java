@@ -3,7 +3,6 @@ package dev.lukebemish.taskgraphrunner.runtime;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import dev.lukebemish.taskgraphrunner.model.Output;
-import dev.lukebemish.taskgraphrunner.runtime.util.HashUtils;
 import dev.lukebemish.taskgraphrunner.runtime.util.JsonUtils;
 import dev.lukebemish.taskgraphrunner.runtime.util.LockManager;
 import dev.lukebemish.taskgraphrunner.runtime.zips.PiecewiseZips;
@@ -92,8 +91,16 @@ public class Invocation implements Context, AutoCloseable {
         "jar"
     );
 
+    public String contentAddressForTaskOutput(Task task, String outputName) {
+        var outputType = task.outputTypes().get(outputName);
+        if (outputType == null) {
+            throw new IllegalArgumentException("No such output `"+outputName+"` for task `"+task.name()+"`");
+        }
+        return task.getContentAddress(outputName);
+    }
+
     @Override
-    public Path existingTaskOutput(Task task, String outputName) {
+    public Path contentAddressedTaskOutput(Task task, String outputName) {
         var outputType = task.outputTypes().get(outputName);
         if (outputType == null) {
             throw new IllegalArgumentException("No such output `"+outputName+"` for task `"+task.name()+"`");
@@ -107,6 +114,7 @@ public class Invocation implements Context, AutoCloseable {
             var contents = Files.readString(markerPath, StandardCharsets.UTF_8);
             if (contents.contains("/")) {
                 var parts = contents.split("/");
+                task.setContentAddress(outputName, parts[0]);
                 if (CAN_REASSEMBLE.contains(parts[1])) {
                     var prefix = parts[0].substring(0, 2);
                     return contentAddressableDirectory().resolve(prefix).resolve(parts[0] + "." + outputType  + ".binpb");
@@ -115,6 +123,7 @@ public class Invocation implements Context, AutoCloseable {
                     return null;
                 }
             }
+            task.setContentAddress(outputName, contents);
             var prefix = contents.substring(0, 2);
             return contentAddressableDirectory().resolve(prefix).resolve(contents + "." + outputType);
         } catch (IOException e) {
@@ -128,7 +137,7 @@ public class Invocation implements Context, AutoCloseable {
     public String storeTaskOutput(Task task, String output) throws IOException {
         var outputPath = taskOutputPath(task, output);
         var outputType = task.outputTypes().get(output);
-        var hash = HashUtils.hash(outputPath, "SHA-256");
+        var hash = contentAddressForTaskOutput(task, output);
         return switch (outputType) {
             case "zip", "jar" -> {
                 var outPath = pathFromHash(hash, outputType + ".binpb");
@@ -290,7 +299,7 @@ public class Invocation implements Context, AutoCloseable {
                     JsonArray outputs = new JsonArray();
                     singleTask.addProperty("state", taskStatePath(task).toAbsolutePath().toString());
                     for (var output : task.outputTypes().entrySet()) {
-                        var existingPath = existingTaskOutput(task, output.getKey());
+                        var existingPath = contentAddressedTaskOutput(task, output.getKey());
                         var lastDot = existingPath.getFileName().toString().lastIndexOf('.');
                         if (lastDot != -1 && !"binpb".equals(output.getValue()) && "binpb".equals(existingPath.getFileName().toString().substring(lastDot + 1))) {
                             var reassemblyInfo = new JsonObject();

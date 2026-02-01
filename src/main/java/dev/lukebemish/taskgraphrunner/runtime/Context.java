@@ -23,7 +23,9 @@ public interface Context {
 
     String storeTaskOutput(Task task, String output) throws IOException;
 
-    Path existingTaskOutput(Task task, String outputName);
+    String contentAddressForTaskOutput(Task task, String outputName);
+
+    Path contentAddressedTaskOutput(Task task, String outputName);
 
     Path reassembleTaskOutput(Task task, String outputName, Path reassemblyInfo);
 

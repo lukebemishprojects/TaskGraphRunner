@@ -23,6 +23,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HexFormat;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -147,7 +148,9 @@ public sealed interface TaskInput extends RecordedInput {
 
         @Override
         public void hashContents(ByteConsumer digest, Context context) {
-            HashUtils.hash(output.resolvePath(context), digest);
+            // We already have a hash from the content-address name
+            var contentAddress = context.contentAddressForTaskOutput(context.getTask(output.taskName()), output.name());
+            digest.update(HexFormat.of().parseHex(contentAddress));
         }
 
         @Override
