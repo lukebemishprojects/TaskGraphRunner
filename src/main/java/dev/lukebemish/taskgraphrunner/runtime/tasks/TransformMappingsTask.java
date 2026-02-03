@@ -73,7 +73,7 @@ public class TransformMappingsTask extends Task {
             mappings = MappingsUtil.fixInnerClasses(source.makeMappings(context));
         } else {
             try {
-                var path = sourceJarInput.path(context);
+                var path = sourceJarInput.resolvePath(context);
                 var inheritance = MappingInheritance.read(path);
                 mappings = MappingsUtil.fixInnerClasses(source.makeMappingsFillInheritance(context).make(inheritance));
             } catch (IOException e) {

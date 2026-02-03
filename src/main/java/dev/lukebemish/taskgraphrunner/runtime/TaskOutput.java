@@ -4,7 +4,15 @@ import java.nio.file.Path;
 import java.util.Objects;
 
 public record TaskOutput(String taskName, String name) {
-    public Path getPath(Context context) {
-        return Objects.requireNonNull(context.existingTaskOutput(context.getTask(taskName), name), "Output did not exist");
+    public Path resolvePath(Context context) {
+        var path = Objects.requireNonNull(context.contentAddressedTaskOutput(context.getTask(taskName), name), "Output did not exist");
+        var lastDot = path.getFileName().toString().lastIndexOf('.');
+        if (lastDot != -1) {
+            var extension = path.getFileName().toString().substring(lastDot + 1);
+            if (!"binpb".equals(context.getTask(taskName).outputTypes().get(name)) && "binpb".equals(extension)) {
+                return context.reassembleTaskOutput(context.getTask(taskName), name, path);
+            }
+        }
+        return path;
     }
 }

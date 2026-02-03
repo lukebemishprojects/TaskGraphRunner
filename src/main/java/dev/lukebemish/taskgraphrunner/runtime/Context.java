@@ -3,6 +3,7 @@ package dev.lukebemish.taskgraphrunner.runtime;
 import dev.lukebemish.taskgraphrunner.model.Output;
 import dev.lukebemish.taskgraphrunner.runtime.util.LockManager;
 
+import java.io.IOException;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -20,7 +21,13 @@ public interface Context {
 
     Path pathFromHash(String hash, String outputType);
 
-    Path existingTaskOutput(Task task, String outputName);
+    String storeTaskOutput(Task task, String output) throws IOException;
+
+    String contentAddressForTaskOutput(Task task, String outputName);
+
+    Path contentAddressedTaskOutput(Task task, String outputName);
+
+    Path reassembleTaskOutput(Task task, String outputName, Path reassemblyInfo);
 
     Path taskStatePath(Task task);
 

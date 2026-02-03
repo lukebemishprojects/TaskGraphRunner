@@ -165,7 +165,7 @@ public abstract class Task implements RecordedInput {
                 try (var ignored = node.task.lock(context)) {
                     node.task.execute(context);
                     for (var entry : node.outputs.entrySet()) {
-                        var outputPath = Objects.requireNonNull(context.existingTaskOutput(node.task, entry.getKey()), "Output did not exist");
+                        var outputPath = Objects.requireNonNull(new TaskOutput(node.task.name, entry.getKey()).resolvePath(context), "Output did not exist");
                         try {
                             Files.copy(outputPath, entry.getValue(), StandardCopyOption.REPLACE_EXISTING);
                         } catch (IOException e) {
@@ -274,12 +274,12 @@ public abstract class Task implements RecordedInput {
             } catch (IOException e) {
                 throw new UncheckedIOException(e);
             }
-            Map<String, String> currentHashes = new HashMap<>();
+            Map<String, Long> currentLengths = new HashMap<>();
             if (context.useCached() && Files.exists(statePath)) {
                 try (var reader = Files.newBufferedReader(statePath, StandardCharsets.UTF_8)) {
                     JsonObject existingState = GSON.fromJson(reader, JsonObject.class);
                     JsonElement existingInputState = existingState.get("inputs");
-                    var targetHashes = existingState.get("hashes").getAsJsonObject();
+                    var targetLengths = existingState.get("lengths").getAsJsonObject();
                     var lastExecutedJson = existingState.get("lastExecuted");
                     this.outputId = existingState.get("outputId").getAsInt();
                     long lastExecuted = 0;
@@ -288,20 +288,20 @@ public abstract class Task implements RecordedInput {
                     }
                     boolean allOutputsMatch = true;
                     for (var output : outputTypes().keySet()) {
-                        var oldHashElement = targetHashes.get(output);
-                        if (oldHashElement == null || !oldHashElement.isJsonPrimitive() || !oldHashElement.getAsJsonPrimitive().isString()) {
+                        var oldLengthElement = targetLengths.get(output);
+                        if (oldLengthElement == null || !oldLengthElement.isJsonPrimitive() || !oldLengthElement.getAsJsonPrimitive().isNumber()) {
                             allOutputsMatch = false;
                             break;
                         }
-                        var oldHash = oldHashElement.getAsString();
-                        var outputPath = context.existingTaskOutput(this, output);
-                        if (outputPath == null || !Files.exists(outputPath)) {
+                        var oldLength = oldLengthElement.getAsLong();
+                        var contentOutputPath = context.contentAddressedTaskOutput(this, output);
+                        if (contentOutputPath == null || !Files.exists(contentOutputPath)) {
                             allOutputsMatch = false;
                             break;
                         }
-                        var hash = HashUtils.hash(outputPath);
-                        currentHashes.put(output, hash);
-                        if (!hash.equals(oldHash)) {
+                        var size = Files.size(contentOutputPath);
+                        currentLengths.put(output, size);
+                        if (size != oldLength) {
                             allOutputsMatch = false;
                             break;
                         }
@@ -331,30 +331,37 @@ public abstract class Task implements RecordedInput {
                 }
                 boolean nothingChanged = true;
                 for (var output : outputTypes().keySet()) {
+                    var newHash = HashUtils.hash(context.taskOutputPath(this, output), "SHA-256");
+                    setContentAddress(output, newHash);
+                }
+                for (var output : outputTypes().keySet()) {
                     var outputPath = context.taskOutputPath(this, output);
-                    var existingHash = currentHashes.get(output);
-                    if (existingHash == null) {
+                    var newHash = getContentAddress(output);
+                    var existingLength = currentLengths.get(output);
+                    if (existingLength == null) {
                         nothingChanged = false;
                         break;
                     }
-                    var newHash = HashUtils.hash(outputPath);
-                    if (!existingHash.equals(newHash)) {
+                    var newLength = Files.size(outputPath);
+                    if (newLength != existingLength) {
                         nothingChanged = false;
                         break;
+                    } else {
+                        // lengths match, check hashes. Old hash comes from the cache key
+                        var oldHash = context.contentAddressForTaskOutput(this, output);
+                        if (!newHash.equals(oldHash)) {
+                            nothingChanged = false;
+                            break;
+                        }
                     }
                 }
                 if (nothingChanged) {
                     outputId--;
                 } else {
                     for (var output : outputTypes().keySet()) {
-                        var outputPath = context.taskOutputPath(this, output);
-                        var hash = HashUtils.hash(outputPath, "SHA-256");
-                        var outPath = context.pathFromHash(hash, outputTypes().get(output));
                         var markerPath = context.taskOutputMarkerPath(this, output);
-                        Files.createDirectories(outPath.getParent());
                         Files.createDirectories(markerPath.getParent());
-                        // This is atomic because locking here is less sensible
-                        Files.move(outputPath, outPath, StandardCopyOption.ATOMIC_MOVE);
+                        var hash = context.storeTaskOutput(this, output);
                         Files.writeString(markerPath, hash, StandardCharsets.UTF_8);
                     }
                 }
@@ -380,16 +387,25 @@ public abstract class Task implements RecordedInput {
         return type;
     }
 
+    private final Map<String, String> contentAddress = new HashMap<>();
+    void setContentAddress(String output, String address) {
+        contentAddress.put(output, address);
+    }
+
+    String getContentAddress(String output) {
+        return contentAddress.get(output);
+    }
+
     private void saveState(Context context) {
         var statePath = context.taskStatePath(this);
         var inputState = recordedValue(context);
-        JsonObject outputHashes = new JsonObject();
+        JsonObject outputLengths = new JsonObject();
         for (var output : outputTypes().keySet()) {
-            var outputPath = Objects.requireNonNull(context.existingTaskOutput(this, output), "Output did not exist");
+            var outputPath = Objects.requireNonNull(context.contentAddressedTaskOutput(this, output), "Output did not exist");
             if (Files.exists(outputPath)) {
                 try {
-                    var hash = HashUtils.hash(outputPath);
-                    outputHashes.addProperty(output, hash);
+                    var length = Files.size(outputPath);
+                    outputLengths.addProperty(output, length);
                 } catch (IOException e) {
                     throw new RuntimeException(e);
                 }
@@ -399,7 +415,7 @@ public abstract class Task implements RecordedInput {
         }
         JsonObject state = new JsonObject();
         state.add("inputs", inputState);
-        state.add("hashes", outputHashes);
+        state.add("lengths", outputLengths);
         state.addProperty("outputId", outputId);
         var currentTime = System.currentTimeMillis();
         state.add("lastExecuted", new JsonPrimitive(currentTime));

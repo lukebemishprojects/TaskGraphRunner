@@ -38,7 +38,7 @@ public class PatchSourcesTask extends JavaTask {
         command.add("-jar");
         command.add(diffPatchPath.toString());
         command.addAll(List.of(
-            input.path(context).toAbsolutePath().toString(), patches.path(context).toAbsolutePath().toString(),
+            input.resolvePath(context).toAbsolutePath().toString(), patches.resolvePath(context).toAbsolutePath().toString(),
             "--patch",
             "--archive", "ZIP",
             "--output", context.taskOutputPath(this, "output").toAbsolutePath().toString(),

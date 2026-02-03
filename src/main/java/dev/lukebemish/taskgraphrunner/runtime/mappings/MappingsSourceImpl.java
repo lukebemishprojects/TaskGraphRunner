@@ -324,7 +324,7 @@ public sealed interface MappingsSourceImpl {
         @Override
         public MappingTree makeMappings(Context context) {
             try {
-                var path = input.path(context);
+                var path = input.resolvePath(context);
                 if (extension != null) {
                     var extensionObj = extension.value().value();
                     if (extensionObj instanceof String extensionString) {

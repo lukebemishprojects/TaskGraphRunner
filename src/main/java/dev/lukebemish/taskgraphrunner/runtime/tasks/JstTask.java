@@ -102,7 +102,7 @@ public class JstTask extends Task {
     }
 
     private void collectArguments(ArrayList<String> command, Context context, Path workingDirectory) {
-        command.add(input.path(context).toAbsolutePath().toString());
+        command.add(input.resolvePath(context).toAbsolutePath().toString());
         command.add(context.taskOutputPath(this, "output").toAbsolutePath().toString());
 
         command.add("--classpath="+classpath.classpath(context));
@@ -134,7 +134,7 @@ public class JstTask extends Task {
                 mappings = MappingsUtil.fixInnerClasses(parchmentMappingsSource.makeMappings(context));
             } else {
                 try {
-                    var path = binaryInput.path(context);
+                    var path = binaryInput.resolvePath(context);
                     var inheritance = MappingInheritance.read(path);
                     mappings = MappingsUtil.fixInnerClasses(parchmentMappingsSource.makeMappingsFillInheritance(context).make(inheritance));
                 } catch (IOException e) {

@@ -49,7 +49,7 @@ public class InjectSourcesTask extends Task {
         try (var os = Files.newOutputStream(context.taskOutputPath(this, "output"));
              var zos = new JarOutputStream(os)) {
             for (var input : inputs) {
-                try (var is = new BufferedInputStream(Files.newInputStream(input.path(context)));
+                try (var is = new BufferedInputStream(Files.newInputStream(input.resolvePath(context)));
                      var zis = new ZipInputStream(is)) {
                     ZipEntry entry;
                     while ((entry = zis.getNextEntry()) != null) {

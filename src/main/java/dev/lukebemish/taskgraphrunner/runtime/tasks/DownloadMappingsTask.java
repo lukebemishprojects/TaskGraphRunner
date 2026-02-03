@@ -44,7 +44,7 @@ public class DownloadMappingsTask extends Task {
         if (distribution == Distribution.JOINED) {
             throw new IllegalArgumentException("Distribution JOINED cannot be downloaded");
         }
-        var versionJson = this.versionJson.path(context);
+        var versionJson = this.versionJson.resolvePath(context);
         try (var reader = Files.newBufferedReader(versionJson)) {
             var json = JsonUtils.GSON.fromJson(reader, JsonObject.class);
             var downloads = json.getAsJsonObject("downloads");

@@ -296,7 +296,7 @@ public class InterfaceInjectionTask extends Task {
     protected void run(Context context) {
         var outputJar = context.taskOutputPath(this, "output");
         var stubsJar = context.taskOutputPath(this, "stubs");
-        var inputJar = this.input.path(context);
+        var inputJar = this.input.resolvePath(context);
 
         Map<String, List<InjectionData>> injections = new HashMap<>();
         try (var classFinder = new NonLoadingClassLoader(classpath.paths(context).toArray(Path[]::new));

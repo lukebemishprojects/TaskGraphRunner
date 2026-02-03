@@ -5,6 +5,7 @@ plugins {
     id 'maven-publish'
     id 'signing'
     id 'com.gradleup.shadow'
+    id 'com.google.protobuf'
 }
 
 group = 'dev.lukebemish'
@@ -166,6 +167,8 @@ dependencies {
     // For reading/writing parchment json files
     implementation libs.feather.core
     implementation libs.feather.gson
+    // For storing various binary information -- notably, zip dissassembly info
+    implementation libs.protobuf.java
     annotationProcessor libs.picocli.codegen
     implementation(project(':')) {
         capabilities {
@@ -205,6 +208,12 @@ dependencies {
     }
 
     instrumentationImplementation libs.asm
+}
+
+protobuf {
+    protoc {
+        artifact = libs.protobuf.protoc.get()
+    }
 }
 
 // This keeps the same versions at runtime and compile time
